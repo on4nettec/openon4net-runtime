@@ -4,6 +4,7 @@ import type { AppContext } from './context.js';
 import { registerErrorHandler } from './plugins/error-handler.js';
 import { registerAuth } from './plugins/auth.js';
 import { registerHealthRoute } from './routes/health.js';
+import { registerAgentRoutes } from './routes/agents.js';
 
 export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
   const app = Fastify({ logger: true });
@@ -13,6 +14,7 @@ export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
   registerErrorHandler(app);
   registerHealthRoute(app);
   registerAuth(app, ctx.env.JWT_SECRET);
+  registerAgentRoutes(app, ctx);
 
   return app;
 }
