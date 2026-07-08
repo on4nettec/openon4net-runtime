@@ -1,0 +1,39 @@
+name: Docker Build
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target: [gateway, web]
+    steps:
+      # See ci.yml for why the parent monorepo is reconstructed here — the
+      # Dockerfiles COPY packages/* (workspace deps) from the parent root,
+      # so the build context must be the parent tree, not this repo alone.
+      - name: Checkout parent monorepo (packages/, tooling)
+        uses: actions/checkout@v4
+        with:
+          repository: on4nettec/openon4net
+          path: parent
+          submodules: false
+
+      - name: Overlay this commit into apps/openon4net-runtime
+        uses: actions/checkout@v4
+        with:
+          path: parent/apps/openon4net-runtime
+
+      - name: Build ${{ matrix.target }} image
+        working-directory: parent
+        run: |
+          docker build \
+            -f apps/openon4net-runtime/Dockerfile.${{ matrix.target }} \
+            -t o2n-${{ matrix.target }}:${{ github.sha }} \
+            -t o2n-${{ matrix.target }}:latest \
+            .
+
+      # Push-to-registry / deploy-to-staging is optional per T-006 — add when
+      # a registry/target environment is chosen.

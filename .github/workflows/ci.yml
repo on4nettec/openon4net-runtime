@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  lint-typecheck-test-build:
+    runs-on: ubuntu-latest
+    steps:
+      # This repo (openon4net-runtime) is nested as apps/openon4net-runtime inside the
+      # parent openon4net monorepo, which owns pnpm-workspace.yaml, turbo.json,
+      # tsconfig.base.json, and packages/* (shared/governance/llm-providers) that
+      # gateway/web depend on. GitHub Actions triggers per-repository, so a workflow
+      # here never sees a push to the parent — we reconstruct the parent tree
+      # ourselves: checkout the parent superproject, then overlay *this* commit
+      # (the one that actually triggered this run) into apps/openon4net-runtime,
+      # overwriting whatever stale submodule pointer the parent currently has.
+      - name: Checkout parent monorepo (packages/, tooling)
+        uses: actions/checkout@v4
+        with:
+          repository: on4nettec/openon4net
+          path: parent
+          submodules: false
+
+      - name: Overlay this commit into apps/openon4net-runtime
+        uses: actions/checkout@v4
+        with:
+          path: parent/apps/openon4net-runtime
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.12.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: parent/pnpm-lock.yaml
+
+      - name: Install dependencies
+        working-directory: parent
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint, typecheck, test, build
+        working-directory: parent
+        run: pnpm turbo run lint typecheck test build
