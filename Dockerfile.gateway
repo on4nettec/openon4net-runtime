@@ -1,0 +1,25 @@
+# Build context is the parent (openon4net) repo root — see docker-compose.yml.
+FROM node:20-slim AS base
+RUN corepack enable
+WORKDIR /repo
+
+FROM base AS deps
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml tsconfig.base.json turbo.json ./
+COPY packages ./packages
+# Copy the whole app dir (not just gateway) — pnpm-lock.yaml has an importer
+# entry for web too, and --frozen-lockfile requires every importer's
+# package.json to actually be present on disk, even ones this image won't run.
+COPY apps/openon4net-runtime ./apps/openon4net-runtime
+RUN pnpm install --frozen-lockfile
+
+FROM deps AS build
+# Builds the whole workspace (not just gateway) for simplicity — packages/*
+# are shared with web, and the extra build cost is negligible at this scale.
+RUN pnpm turbo run build
+
+FROM base AS runner
+ENV NODE_ENV=production
+COPY --from=build /repo .
+WORKDIR /repo/apps/openon4net-runtime/gateway
+EXPOSE 4000
+CMD ["node", "dist/index.js"]

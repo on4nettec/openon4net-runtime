@@ -1,0 +1,21 @@
+# Build context is the parent (openon4net) repo root — see docker-compose.yml.
+FROM node:20-slim AS base
+RUN corepack enable
+WORKDIR /repo
+
+FROM base AS deps
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml tsconfig.base.json turbo.json ./
+COPY packages ./packages
+# Copy the whole app dir (not just web) — see Dockerfile.gateway for why.
+COPY apps/openon4net-runtime ./apps/openon4net-runtime
+RUN pnpm install --frozen-lockfile
+
+FROM deps AS build
+RUN pnpm turbo run build
+
+FROM base AS runner
+ENV NODE_ENV=production
+COPY --from=build /repo .
+WORKDIR /repo/apps/openon4net-runtime/web
+EXPOSE 3000
+CMD ["pnpm", "start"]
