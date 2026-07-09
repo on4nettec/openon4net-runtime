@@ -1,0 +1,160 @@
+'use client';
+
+import type { Agent, AgentCreateRequest, ErrorEnvelope } from '@o2n/shared';
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
+
+export interface Session {
+  token: string;
+  organizationId: string;
+  organizationName: string;
+  workspaceId: string;
+  userId: string;
+  role: string;
+}
+
+const SESSION_KEY = 'o2n_session';
+
+export function saveSession(session: Session): void {
+  localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+}
+
+export function loadSession(): Session | null {
+  const raw = localStorage.getItem(SESSION_KEY);
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as Session;
+  } catch {
+    return null;
+  }
+}
+
+export function clearSession(): void {
+  localStorage.removeItem(SESSION_KEY);
+}
+
+export class ApiError extends Error {
+  constructor(
+    public code: string,
+    message: string,
+    public status: number,
+  ) {
+    super(message);
+    this.name = 'ApiError';
+  }
+}
+
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const session = loadSession();
+  const headers = new Headers(init?.headers);
+  headers.set('Content-Type', 'application/json');
+  if (session) {
+    headers.set('Authorization', `Bearer ${session.token}`);
+    headers.set('X-Organization-Id', session.organizationId);
+  }
+
+  const response = await fetch(`${API_URL}${path}`, { ...init, headers });
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as ErrorEnvelope | null;
+    throw new ApiError(
+      body?.error.code ?? 'UNKNOWN_ERROR',
+      body?.error.message ?? `Request failed with status ${response.status}`,
+      response.status,
+    );
+  }
+  if (response.status === 204) return undefined as T;
+  return (await response.json()) as T;
+}
+
+export interface StreamCallbacks {
+  onToken: (delta: string) => void;
+  onDone: (info: { conversationId: string; model: string; costCents: number; traceId: string; timeMs: number }) => void;
+  onRequiresApproval: (approvalId: string) => void;
+  onError: (message: string) => void;
+}
+
+/**
+ * Native EventSource only supports GET, and this endpoint is a POST — so we
+ * fetch() the stream and parse Server-Sent Events out of the response body
+ * by hand (split on blank lines, pull out `event:`/`data:` fields).
+ */
+export async function streamChat(
+  agentId: string,
+  message: string,
+  conversationId: string | undefined,
+  callbacks: StreamCallbacks,
+): Promise<void> {
+  const session = loadSession();
+  if (!session) throw new Error('Not signed in');
+
+  const response = await fetch(`${API_URL}/v1/agents/${agentId}/chat/stream`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${session.token}`,
+      'X-Organization-Id': session.organizationId,
+    },
+    body: JSON.stringify({ message, conversationId }),
+  });
+
+  if (!response.ok || !response.body) {
+    const body = (await response.json().catch(() => null)) as ErrorEnvelope | null;
+    callbacks.onError(body?.error.message ?? `Request failed with status ${response.status}`);
+    return;
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    const events = buffer.split('\n\n');
+    buffer = events.pop() ?? '';
+
+    for (const rawEvent of events) {
+      const eventLine = rawEvent.split('\n').find((l) => l.startsWith('event:'));
+      const dataLine = rawEvent.split('\n').find((l) => l.startsWith('data:'));
+      if (!eventLine || !dataLine) continue;
+
+      const eventType = eventLine.slice('event:'.length).trim();
+      const data: unknown = JSON.parse(dataLine.slice('data:'.length).trim());
+
+      if (eventType === 'token') {
+        callbacks.onToken((data as { delta: string }).delta);
+      } else if (eventType === 'done') {
+        callbacks.onDone(
+          data as { conversationId: string; model: string; costCents: number; traceId: string; timeMs: number },
+        );
+      } else if (eventType === 'requires-approval') {
+        callbacks.onRequiresApproval((data as { approvalId: string }).approvalId);
+      } else if (eventType === 'error') {
+        callbacks.onError((data as { message: string }).message);
+      }
+    }
+  }
+}
+
+export const api = {
+  login: (input: { apiKey: string; organizationSlug: string; organizationName?: string | undefined }) =>
+    request<Session>('/v1/auth/token', { method: 'POST', body: JSON.stringify(input) }),
+
+  listAgents: () => request<Agent[]>('/v1/agents'),
+
+  getAgent: (id: string) => request<Agent>(`/v1/agents/${id}`),
+
+  createAgent: (input: AgentCreateRequest) =>
+    request<Agent>('/v1/agents', { method: 'POST', body: JSON.stringify(input) }),
+
+  getConfig: () =>
+    request<{
+      llmProvider: string;
+      llmModel: string;
+      llmApiKeyMasked: string;
+      approvalThresholdCents: number;
+      rateLimitPerMinute: number;
+    }>('/v1/config'),
+};

@@ -49,10 +49,17 @@ export function registerChatRoutes(app: FastifyInstance, ctx: AppContext): void 
       const parsed = ChatRequestSchema.safeParse(request.body);
       if (!parsed.success) throw new ValidationError('Invalid chat payload', parsed.error.flatten());
 
+      // Writing to reply.raw bypasses Fastify's reply pipeline entirely, so
+      // @fastify/cors's onSend hook (registered in app.ts) never runs for
+      // this response — its CORS header has to be set by hand here, or
+      // browsers block reading the stream even though the OPTIONS preflight
+      // (which @fastify/cors does intercept) succeeds.
+      const origin = request.headers.origin;
       reply.raw.writeHead(200, {
         'Content-Type': 'text/event-stream',
         'Cache-Control': 'no-cache',
         Connection: 'keep-alive',
+        ...(origin ? { 'Access-Control-Allow-Origin': origin, Vary: 'Origin' } : {}),
       });
 
       try {
@@ -73,6 +80,7 @@ export function registerChatRoutes(app: FastifyInstance, ctx: AppContext): void 
           } else {
             reply.raw.write(
               `event: done\ndata: ${JSON.stringify({
+                conversationId: event.conversationId,
                 model: event.model,
                 costCents: event.costCents,
                 traceId: event.traceId,

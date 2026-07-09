@@ -37,7 +37,7 @@ export type ChatOutcome = ChatSuccess | ChatRequiresApproval;
 
 export type ChatStreamEvent =
   | { type: 'token'; delta: string }
-  | { type: 'done'; model: string; costCents: number; traceId: string; timeMs: number }
+  | { type: 'done'; conversationId: string; model: string; costCents: number; traceId: string; timeMs: number }
   | { type: 'requires_approval'; approvalId: string };
 
 interface PreparedChat {
@@ -240,7 +240,14 @@ export class ChatService {
 
     await this.maybeSummarize(conversation.id, model);
 
-    yield { type: 'done', model, costCents, traceId: params.traceId, timeMs: Date.now() - start };
+    yield {
+      type: 'done',
+      conversationId: conversation.id,
+      model,
+      costCents,
+      traceId: params.traceId,
+      timeMs: Date.now() - start,
+    };
   }
 
   private async enqueueApproval(params: ChatParams, agentId: string, estimatedCostCents: number): Promise<string> {
