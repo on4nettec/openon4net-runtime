@@ -72,8 +72,15 @@ export class ChatService {
     this.llmService = new LlmService(llmProvider);
   }
 
-  /** Shared by chat() and chatStream(): agent/status/budget/approval checks, conversation + prompt assembly. */
-  private async prepare(params: ChatParams): Promise<PrepareOutcome> {
+  /**
+   * Shared by chat() and chatStream(): agent/status/budget/approval checks,
+   * conversation + prompt assembly. skipApprovalGate is set when re-running a
+   * request that has already been through the approval queue (see
+   * routes/approvals.ts) — re-checked: agent-active + hard budget cap;
+   * NOT re-checked: the cost-estimate-vs-threshold gate, since a human
+   * already signed off on this specific request.
+   */
+  private async prepare(params: ChatParams, skipApprovalGate = false): Promise<PrepareOutcome> {
     const agent = await this.agentService.getById(params.organizationId, params.agentId);
     if (agent.status !== 'active') {
       throw new AgentNotActiveError(agent.id, agent.status);
@@ -88,10 +95,12 @@ export class ChatService {
 
     // Budget gate 2: this specific request's estimated cost exceeds the
     // approval threshold -> human-in-the-loop (build pack §4.3), not an error.
-    const estimatedCostCents = estimatePromptCostCents(model, params.message.length, this.env.LLM_PROVIDER);
-    if (requiresApproval(estimatedCostCents, this.env.APPROVAL_THRESHOLD_CENTS)) {
-      const approvalId = await this.enqueueApproval(params, agent.id, estimatedCostCents);
-      return { kind: 'requires_approval', approvalId };
+    if (!skipApprovalGate) {
+      const estimatedCostCents = estimatePromptCostCents(model, params.message.length, this.env.LLM_PROVIDER);
+      if (requiresApproval(estimatedCostCents, this.env.APPROVAL_THRESHOLD_CENTS)) {
+        const approvalId = await this.enqueueApproval(params, agent.id, estimatedCostCents);
+        return { kind: 'requires_approval', approvalId };
+      }
     }
 
     const conversation = await this.memoryService.getOrCreateConversation(
@@ -170,8 +179,8 @@ export class ChatService {
     }
   }
 
-  async chat(params: ChatParams): Promise<ChatOutcome> {
-    const outcome = await this.prepare(params);
+  async chat(params: ChatParams, skipApprovalGate = false): Promise<ChatOutcome> {
+    const outcome = await this.prepare(params, skipApprovalGate);
     if (outcome.kind === 'requires_approval') return outcome;
     const { agent, conversation, llmMessages, model } = outcome.prepared;
 
@@ -258,7 +267,13 @@ export class ChatService {
         [
           params.organizationId,
           agentId,
-          JSON.stringify({ traceId: params.traceId, message: params.message, estimatedCostCents }),
+          JSON.stringify({
+            traceId: params.traceId,
+            message: params.message,
+            conversationId: params.conversationId ?? null,
+            userId: params.userId,
+            estimatedCostCents,
+          }),
           `Estimated cost ${estimatedCostCents} cents exceeds threshold ${this.env.APPROVAL_THRESHOLD_CENTS} cents`,
         ],
       );

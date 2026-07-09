@@ -9,6 +9,7 @@ import { registerMemoryRoutes } from './routes/memory.js';
 import { registerChatRoutes } from './routes/chat.js';
 import { registerAuthRoutes } from './routes/auth.js';
 import { registerConfigRoutes } from './routes/config.js';
+import { registerApprovalRoutes } from './routes/approvals.js';
 
 export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
   const app = Fastify({ logger: true });
@@ -23,6 +24,7 @@ export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
   registerMemoryRoutes(app, ctx);
   registerChatRoutes(app, ctx);
   registerConfigRoutes(app, ctx);
+  registerApprovalRoutes(app, ctx);
 
   return app;
 }
