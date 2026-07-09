@@ -25,6 +25,16 @@ export default function AgentChatPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
+  /** Authoritative reload from the server — used both on page mount and after a dropped connection. */
+  async function loadHistory(): Promise<number> {
+    const { conversation, messages: history } = await api.getLatestConversation(agentId);
+    if (!conversation) return 0;
+    setConversationId(conversation.id);
+    const displayable = history.filter((m) => m.role === 'user' || m.role === 'agent');
+    setMessages(displayable.map((m) => ({ role: m.role as 'user' | 'agent', content: m.content })));
+    return displayable.length;
+  }
+
   useEffect(() => {
     if (!loadSession()) {
       router.push('/login');
@@ -36,18 +46,9 @@ export default function AgentChatPage() {
       .catch((err) => setNotice(err instanceof ApiError ? err.message : 'Failed to load agent'));
 
     // Resume the most recent conversation instead of starting empty every time the page loads.
-    api
-      .getLatestConversation(agentId)
-      .then(({ conversation, messages: history }) => {
-        if (!conversation) return;
-        setConversationId(conversation.id);
-        setMessages(
-          history
-            .filter((m) => m.role === 'user' || m.role === 'agent')
-            .map((m) => ({ role: m.role as 'user' | 'agent', content: m.content })),
-        );
-      })
-      .catch((err) => setNotice(err instanceof ApiError ? err.message : 'Failed to load conversation history'));
+    loadHistory().catch((err) =>
+      setNotice(err instanceof ApiError ? err.message : 'Failed to load conversation history'),
+    );
   }, [agentId, router]);
 
   useEffect(() => {
@@ -59,6 +60,7 @@ export default function AgentChatPage() {
     if (!input.trim() || sending) return;
 
     const userMessage = input;
+    const countBeforeSend = messages.length;
     setInput('');
     setNotice(null);
     setMessages((prev) => [...prev, { role: 'user', content: userMessage }]);
@@ -101,6 +103,24 @@ export default function AgentChatPage() {
             return next;
           });
           setSending(false);
+        },
+        onDisconnect: () => {
+          // Don't guess whether the message landed — the LLM call may have
+          // already completed and been persisted server-side even though
+          // delivery to the browser was cut. Reload from server truth
+          // instead of blindly resending (which risks a duplicate response
+          // and double-charging a paid provider).
+          setNotice('Connection lost — checking whether your message went through…');
+          loadHistory()
+            .then((countAfter) => {
+              setNotice(
+                countAfter > countBeforeSend + 1
+                  ? 'Reconnected — your message did go through.'
+                  : 'Connection was lost and the message may not have been delivered. Please try sending it again.',
+              );
+            })
+            .catch(() => setNotice('Connection lost and could not reconnect. Please refresh the page.'))
+            .finally(() => setSending(false));
         },
       });
     } catch (err) {

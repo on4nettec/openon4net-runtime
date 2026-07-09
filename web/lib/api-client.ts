@@ -76,6 +76,17 @@ export interface StreamCallbacks {
   onDone: (info: { conversationId: string; model: string; costCents: number; traceId: string; timeMs: number }) => void;
   onRequiresApproval: (approvalId: string) => void;
   onError: (message: string) => void;
+  /**
+   * The connection itself dropped mid-stream (network blip, server restart) —
+   * distinct from onError (the server told us something went wrong). We
+   * deliberately do NOT auto-retry the same message here: the LLM call may
+   * have already completed and been persisted server-side by the time the
+   * connection dropped on delivery, so blindly resending risks a duplicate
+   * response and double-charging a paid provider. The caller should
+   * reconcile against server truth (api.getLatestConversation) instead of
+   * guessing.
+   */
+  onDisconnect: () => void;
 }
 
 /**
@@ -92,15 +103,21 @@ export async function streamChat(
   const session = loadSession();
   if (!session) throw new Error('Not signed in');
 
-  const response = await fetch(`${API_URL}/v1/agents/${agentId}/chat/stream`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${session.token}`,
-      'X-Organization-Id': session.organizationId,
-    },
-    body: JSON.stringify({ message, conversationId }),
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${API_URL}/v1/agents/${agentId}/chat/stream`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${session.token}`,
+        'X-Organization-Id': session.organizationId,
+      },
+      body: JSON.stringify({ message, conversationId }),
+    });
+  } catch {
+    callbacks.onDisconnect();
+    return;
+  }
 
   if (!response.ok || !response.body) {
     const body = (await response.json().catch(() => null)) as ErrorEnvelope | null;
@@ -111,35 +128,52 @@ export async function streamChat(
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
+  let sawDone = false;
 
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
 
-    const events = buffer.split('\n\n');
-    buffer = events.pop() ?? '';
+      const events = buffer.split('\n\n');
+      buffer = events.pop() ?? '';
 
-    for (const rawEvent of events) {
-      const eventLine = rawEvent.split('\n').find((l) => l.startsWith('event:'));
-      const dataLine = rawEvent.split('\n').find((l) => l.startsWith('data:'));
-      if (!eventLine || !dataLine) continue;
+      for (const rawEvent of events) {
+        const eventLine = rawEvent.split('\n').find((l) => l.startsWith('event:'));
+        const dataLine = rawEvent.split('\n').find((l) => l.startsWith('data:'));
+        if (!eventLine || !dataLine) continue;
 
-      const eventType = eventLine.slice('event:'.length).trim();
-      const data: unknown = JSON.parse(dataLine.slice('data:'.length).trim());
+        const eventType = eventLine.slice('event:'.length).trim();
+        const data: unknown = JSON.parse(dataLine.slice('data:'.length).trim());
 
-      if (eventType === 'token') {
-        callbacks.onToken((data as { delta: string }).delta);
-      } else if (eventType === 'done') {
-        callbacks.onDone(
-          data as { conversationId: string; model: string; costCents: number; traceId: string; timeMs: number },
-        );
-      } else if (eventType === 'requires-approval') {
-        callbacks.onRequiresApproval((data as { approvalId: string }).approvalId);
-      } else if (eventType === 'error') {
-        callbacks.onError((data as { message: string }).message);
+        if (eventType === 'token') {
+          callbacks.onToken((data as { delta: string }).delta);
+        } else if (eventType === 'done') {
+          sawDone = true;
+          callbacks.onDone(
+            data as { conversationId: string; model: string; costCents: number; traceId: string; timeMs: number },
+          );
+        } else if (eventType === 'requires-approval') {
+          sawDone = true;
+          callbacks.onRequiresApproval((data as { approvalId: string }).approvalId);
+        } else if (eventType === 'error') {
+          sawDone = true;
+          callbacks.onError((data as { message: string }).message);
+        }
       }
     }
+  } catch {
+    // reader.read() threw — connection dropped mid-stream, not a clean end.
+    sawDone = true;
+    callbacks.onDisconnect();
+    return;
+  }
+
+  // Stream ended (reader signaled done) without ever seeing a terminal SSE
+  // event — the connection was cut, not gracefully closed by the server.
+  if (!sawDone) {
+    callbacks.onDisconnect();
   }
 }
 

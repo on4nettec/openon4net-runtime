@@ -27,7 +27,11 @@ This is the **installable runtime** customers run on their own servers (self-hos
 - Neo4j (memory graph, optional for MVP)
 - MinIO/S3 (files)
 
-Migrations: `tools/migrations/`
+Migrations: `migrations/` (this repo's own — not the root repo's `tools/migrations/`, which predates the plane split and is being retired)
+
+## Getting Started
+
+New to this repo? See [ONBOARDING.md](ONBOARDING.md) for the full setup walkthrough (clone → env → run → first chat), including the gotchas that have actually come up during development.
 
 ## Suggested Deploy Modes
 - **MVP:** Docker Compose (local / single node).
