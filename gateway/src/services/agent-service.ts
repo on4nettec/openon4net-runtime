@@ -126,4 +126,12 @@ export class AgentService {
   async setStatus(organizationId: string, agentId: string, status: AgentStatus): Promise<Agent> {
     return this.update(organizationId, agentId, { status });
   }
+
+  async addUsedBudget(organizationId: string, agentId: string, costCents: number): Promise<void> {
+    await this.db.query(
+      `UPDATE agents SET used_budget_cents = used_budget_cents + $1, updated_at = NOW()
+       WHERE id = $2 AND organization_id = $3`,
+      [costCents, agentId, organizationId],
+    );
+  }
 }

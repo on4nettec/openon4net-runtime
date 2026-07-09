@@ -1,7 +1,8 @@
 import type { FastifyInstance } from 'fastify';
 import { MemorySearchSchema, MemoryWriteSchema } from '@o2n/shared';
-import { PermissionDeniedError, ValidationError, hasPermission } from '@o2n/governance';
+import { ValidationError } from '@o2n/governance';
 import type { AppContext } from '../context.js';
+import { requirePermission } from '../lib/require-permission.js';
 import { AgentService } from '../services/agent-service.js';
 import { MemoryService } from '../services/memory-service.js';
 
@@ -10,9 +11,7 @@ export function registerMemoryRoutes(app: FastifyInstance, ctx: AppContext): voi
   const memoryService = new MemoryService(ctx.db, ctx.redis, ctx.env.SHORT_MEMORY_TTL_SECONDS);
 
   app.post('/v1/memory/write', async (request) => {
-    if (!hasPermission(request.auth.role, 'memory:write')) {
-      throw new PermissionDeniedError('memory:write');
-    }
+    requirePermission(request, 'memory:write');
     const parsed = MemoryWriteSchema.safeParse(request.body);
     if (!parsed.success) throw new ValidationError('Invalid memory write payload', parsed.error.flatten());
 
@@ -28,9 +27,7 @@ export function registerMemoryRoutes(app: FastifyInstance, ctx: AppContext): voi
   });
 
   app.post('/v1/memory/search', async (request) => {
-    if (!hasPermission(request.auth.role, 'memory:read')) {
-      throw new PermissionDeniedError('memory:read');
-    }
+    requirePermission(request, 'memory:read');
     const parsed = MemorySearchSchema.safeParse(request.body);
     if (!parsed.success) throw new ValidationError('Invalid memory search payload', parsed.error.flatten());
 

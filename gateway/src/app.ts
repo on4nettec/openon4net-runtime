@@ -6,6 +6,7 @@ import { registerAuth } from './plugins/auth.js';
 import { registerHealthRoute } from './routes/health.js';
 import { registerAgentRoutes } from './routes/agents.js';
 import { registerMemoryRoutes } from './routes/memory.js';
+import { registerChatRoutes } from './routes/chat.js';
 
 export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
   const app = Fastify({ logger: true });
@@ -17,6 +18,7 @@ export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
   registerAuth(app, ctx.env.JWT_SECRET);
   registerAgentRoutes(app, ctx);
   registerMemoryRoutes(app, ctx);
+  registerChatRoutes(app, ctx);
 
   return app;
 }

@@ -12,7 +12,7 @@ async function main(): Promise<void> {
     env,
     db: createDb(env.DATABASE_URL),
     redis: createRedis(env.REDIS_URL),
-    llmProvider: getProvider(env.LLM_PROVIDER, env.LLM_API_KEY),
+    llmProvider: getProvider(env.LLM_PROVIDER, env.LLM_API_KEY, env.LLM_BASE_URL),
   };
 
   const app = await buildApp(ctx);

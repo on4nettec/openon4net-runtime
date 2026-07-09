@@ -4,66 +4,27 @@
 # tree. Run this from a checkout of the parent superproject with this submodule
 # initialized (`git submodule update --init`), not from a standalone clone of
 # openon4net-runtime alone. See ci.yml for the same constraint in CI.
+#
+# postgres/redis/minio are NOT managed here — they run as separate,
+# already-existing containers on this machine. This file only builds and runs
+# gateway + web, which connect to that external infra via DATABASE_URL/
+# REDIS_URL in ./.env (copy .env.example -> .env first).
+#
+# Gateway runs inside a container, so DATABASE_URL/REDIS_URL in .env must use
+# `host.docker.internal` (Docker Desktop's DNS name for the host machine),
+# NOT `localhost` — `localhost` inside this container means the container
+# itself, not your host's postgres/redis. If you instead run the gateway
+# directly on the host (`pnpm dev`, no Docker), use `localhost` there.
 services:
-  postgres:
-    image: postgres:16
-    environment:
-      POSTGRES_DB: o2n
-      POSTGRES_USER: o2n
-      POSTGRES_PASSWORD: o2n_dev_password
-    ports:
-      - '5532:5432' # host 5532 -> avoid clashing with other local Postgres instances
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-      - ./migrations:/docker-entrypoint-initdb.d:ro
-    healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U o2n -d o2n']
-      interval: 5s
-      timeout: 5s
-      retries: 10
-
-  redis:
-    image: redis:7
-    ports:
-      - '6479:6379' # host 6479 -> avoid clashing with other local Redis instances
-    healthcheck:
-      test: ['CMD', 'redis-cli', 'ping']
-      interval: 5s
-      timeout: 5s
-      retries: 10
-
-  minio:
-    image: minio/minio:latest
-    command: server /data --console-address ":9001"
-    environment:
-      MINIO_ROOT_USER: o2n_minio
-      MINIO_ROOT_PASSWORD: o2n_minio_password
-    ports:
-      - '9000:9000'
-      - '9001:9001'
-    volumes:
-      - minio_data:/data
-    healthcheck:
-      test: ['CMD', 'curl', '-f', 'http://localhost:9000/minio/health/live']
-      interval: 5s
-      timeout: 5s
-      retries: 10
-
   gateway:
     build:
       context: ../..
       dockerfile: apps/openon4net-runtime/Dockerfile.gateway
     env_file: .env
-    environment:
-      DATABASE_URL: postgres://o2n:o2n_dev_password@postgres:5432/o2n
-      REDIS_URL: redis://redis:6379
+    extra_hosts:
+      - 'host.docker.internal:host-gateway' # needed on Linux Docker; no-op on Docker Desktop (Win/Mac)
     ports:
       - '4000:4000'
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
 
   web:
     build:
@@ -75,7 +36,3 @@ services:
       - '3200:3000' # host 3200 -> avoid clashing with other local apps on 3000
     depends_on:
       - gateway
-
-volumes:
-  postgres_data:
-  minio_data:

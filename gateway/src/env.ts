@@ -6,9 +6,13 @@ const EnvSchema = z.object({
   REDIS_URL: z.string().min(1),
   JWT_SECRET: z.string().min(1),
   DEV_API_KEY: z.string().min(1),
-  LLM_PROVIDER: z.enum(['anthropic', 'openai']),
+  LLM_PROVIDER: z.enum(['anthropic', 'openai', 'deepseek', 'ollama']),
   LLM_API_KEY: z.string().min(1),
   LLM_MODEL: z.string().min(1),
+  // Overrides the default base URL for openai/deepseek/ollama (all share one
+  // OpenAI-compatible adapter — see packages/llm-providers/src/registry.ts).
+  // Leave unset to use each provider's default; irrelevant for anthropic.
+  LLM_BASE_URL: z.string().url().optional(),
   APPROVAL_THRESHOLD_CENTS: z.coerce.number().int().nonnegative().default(2000),
   SHORT_MEMORY_TTL_SECONDS: z.coerce.number().int().positive().default(3600),
   RATE_LIMIT_PER_MINUTE: z.coerce.number().int().positive().default(100),

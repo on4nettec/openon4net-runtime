@@ -1,16 +1,11 @@
-import type { FastifyInstance, FastifyRequest } from 'fastify';
+import type { FastifyInstance } from 'fastify';
 import { AgentCreateSchema, AgentUpdateSchema } from '@o2n/shared';
-import { PermissionDeniedError, ValidationError, hasPermission } from '@o2n/governance';
+import { ValidationError } from '@o2n/governance';
 import type { AppContext } from '../context.js';
 import { withTransaction } from '../db.js';
+import { requirePermission } from '../lib/require-permission.js';
 import { AgentService } from '../services/agent-service.js';
 import { AuditService } from '../services/audit-service.js';
-
-function requirePermission(request: FastifyRequest, permission: string): void {
-  if (!hasPermission(request.auth.role, permission)) {
-    throw new PermissionDeniedError(permission);
-  }
-}
 
 export function registerAgentRoutes(app: FastifyInstance, ctx: AppContext): void {
   const agentService = new AgentService(ctx.db);
