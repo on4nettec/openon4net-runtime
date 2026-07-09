@@ -34,6 +34,20 @@ export default function AgentChatPage() {
       .getAgent(agentId)
       .then(setAgent)
       .catch((err) => setNotice(err instanceof ApiError ? err.message : 'Failed to load agent'));
+
+    // Resume the most recent conversation instead of starting empty every time the page loads.
+    api
+      .getLatestConversation(agentId)
+      .then(({ conversation, messages: history }) => {
+        if (!conversation) return;
+        setConversationId(conversation.id);
+        setMessages(
+          history
+            .filter((m) => m.role === 'user' || m.role === 'agent')
+            .map((m) => ({ role: m.role as 'user' | 'agent', content: m.content })),
+        );
+      })
+      .catch((err) => setNotice(err instanceof ApiError ? err.message : 'Failed to load conversation history'));
   }, [agentId, router]);
 
   useEffect(() => {

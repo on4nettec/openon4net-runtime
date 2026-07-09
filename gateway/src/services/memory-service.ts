@@ -80,6 +80,16 @@ export class MemoryService {
     return toConversation(row);
   }
 
+  /** Most recent conversation for an agent, or null if none exists yet — used to resume a chat on page load. */
+  async getLatestConversation(agentId: string): Promise<Conversation | null> {
+    const { rows } = await this.db.query<ConversationRow>(
+      `SELECT * FROM conversations WHERE agent_id = $1 ORDER BY updated_at DESC LIMIT 1`,
+      [agentId],
+    );
+    const row = rows[0];
+    return row ? toConversation(row) : null;
+  }
+
   async getOrCreateConversation(agentId: string, userId: string | null, conversationId?: string): Promise<Conversation> {
     if (conversationId) {
       const { rows } = await this.db.query<ConversationRow>(

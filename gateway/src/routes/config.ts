@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import type { AppContext } from '../context.js';
+import { requirePermission } from '../lib/require-permission.js';
 
 function maskKey(key: string): string {
   if (key.length <= 8) return '••••••••';
@@ -18,4 +19,27 @@ export function registerConfigRoutes(app: FastifyInstance, ctx: AppContext): voi
     approvalThresholdCents: ctx.env.APPROVAL_THRESHOLD_CENTS,
     rateLimitPerMinute: ctx.env.RATE_LIMIT_PER_MINUTE,
   }));
+
+  // A real (not mocked) minimal completion call against the configured
+  // provider — costs a handful of tokens, gated the same as chat since it
+  // spends real money on paid providers. Never throws: the settings page
+  // wants a pass/fail, not a 500.
+  app.post('/v1/config/test-connection', async (request) => {
+    requirePermission(request, 'agents:chat');
+    const start = Date.now();
+    try {
+      const result = await ctx.llmProvider.complete({
+        model: ctx.env.LLM_MODEL,
+        messages: [{ role: 'user', content: 'Reply with exactly: OK' }],
+        maxTokens: 5,
+      });
+      return { success: true, model: result.model, responseTimeMs: Date.now() - start };
+    } catch (err) {
+      return {
+        success: false,
+        error: err instanceof Error ? err.message : 'Unknown error',
+        responseTimeMs: Date.now() - start,
+      };
+    }
+  });
 }

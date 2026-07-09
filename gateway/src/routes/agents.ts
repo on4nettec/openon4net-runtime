@@ -6,9 +6,11 @@ import { withTransaction } from '../db.js';
 import { requirePermission } from '../lib/require-permission.js';
 import { AgentService } from '../services/agent-service.js';
 import { AuditService } from '../services/audit-service.js';
+import { MemoryService } from '../services/memory-service.js';
 
 export function registerAgentRoutes(app: FastifyInstance, ctx: AppContext): void {
   const agentService = new AgentService(ctx.db);
+  const memoryService = new MemoryService(ctx.db, ctx.redis, ctx.env.SHORT_MEMORY_TTL_SECONDS);
 
   // Every write below runs in a transaction with its own audit_logs insert —
   // an agent mutation must never be committed without an audit trail
@@ -81,6 +83,35 @@ export function registerAgentRoutes(app: FastifyInstance, ctx: AppContext): void
       });
       return agent;
     });
+  });
+
+  app.post<{ Params: { id: string } }>('/v1/agents/:id/resume', async (request) => {
+    requirePermission(request, 'agents:update');
+    return withTransaction(ctx.db, async (client) => {
+      const agent = await new AgentService(client).setStatus(
+        request.auth.organizationId,
+        request.params.id,
+        'active',
+      );
+      await new AuditService(client).logAction({
+        organizationId: request.auth.organizationId,
+        agentId: agent.id,
+        userId: request.auth.userId,
+        actionType: 'agent-resume',
+        actionData: { traceId: request.traceId },
+      });
+      return agent;
+    });
+  });
+
+  // Used by the dashboard to resume a chat on page load instead of starting empty every time.
+  app.get<{ Params: { id: string } }>('/v1/agents/:id/conversation', async (request) => {
+    requirePermission(request, 'agents:read');
+    await agentService.getById(request.auth.organizationId, request.params.id); // org-scope check, 404s otherwise
+    const conversation = await memoryService.getLatestConversation(request.params.id);
+    if (!conversation) return { conversation: null, messages: [] };
+    const messages = await memoryService.getRecentMessages(conversation.id, 50);
+    return { conversation, messages };
   });
 
   // Soft-delete: sets status='terminated' rather than a physical DELETE, to

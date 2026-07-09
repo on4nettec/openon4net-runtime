@@ -1,6 +1,6 @@
 'use client';
 
-import type { Agent, AgentCreateRequest, ErrorEnvelope } from '@o2n/shared';
+import type { Agent, AgentCreateRequest, Conversation, ErrorEnvelope, Message } from '@o2n/shared';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 
@@ -47,7 +47,12 @@ export class ApiError extends Error {
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const session = loadSession();
   const headers = new Headers(init?.headers);
-  headers.set('Content-Type', 'application/json');
+  // Fastify's default JSON parser rejects a zero-byte body when Content-Type
+  // says application/json (FST_ERR_CTP_EMPTY_JSON_BODY) — only claim JSON
+  // when there's actually a body (POST /pause, /resume, DELETE have none).
+  if (init?.body !== undefined) {
+    headers.set('Content-Type', 'application/json');
+  }
   if (session) {
     headers.set('Authorization', `Bearer ${session.token}`);
     headers.set('X-Organization-Id', session.organizationId);
@@ -149,6 +154,13 @@ export const api = {
   createAgent: (input: AgentCreateRequest) =>
     request<Agent>('/v1/agents', { method: 'POST', body: JSON.stringify(input) }),
 
+  pauseAgent: (id: string) => request<Agent>(`/v1/agents/${id}/pause`, { method: 'POST' }),
+  resumeAgent: (id: string) => request<Agent>(`/v1/agents/${id}/resume`, { method: 'POST' }),
+  terminateAgent: (id: string) => request<void>(`/v1/agents/${id}`, { method: 'DELETE' }),
+
+  getLatestConversation: (agentId: string) =>
+    request<{ conversation: Conversation | null; messages: Message[] }>(`/v1/agents/${agentId}/conversation`),
+
   getConfig: () =>
     request<{
       llmProvider: string;
@@ -157,4 +169,10 @@ export const api = {
       approvalThresholdCents: number;
       rateLimitPerMinute: number;
     }>('/v1/config'),
+
+  testConnection: () =>
+    request<{ success: boolean; model?: string; error?: string; responseTimeMs: number }>(
+      '/v1/config/test-connection',
+      { method: 'POST' },
+    ),
 };

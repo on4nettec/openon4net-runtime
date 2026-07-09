@@ -17,6 +17,7 @@ export default function AgentsPage() {
   const [name, setName] = useState('');
   const [role, setRole] = useState('');
   const [creating, setCreating] = useState(false);
+  const [actioningId, setActioningId] = useState<string | null>(null);
 
   useEffect(() => {
     const s = loadSession();
@@ -62,6 +63,46 @@ export default function AgentsPage() {
   function handleLogout() {
     clearSession();
     router.push('/login');
+  }
+
+  async function handlePause(agentId: string) {
+    setActioningId(agentId);
+    setError(null);
+    try {
+      await api.pauseAgent(agentId);
+      await refresh();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Failed to pause agent');
+    } finally {
+      setActioningId(null);
+    }
+  }
+
+  async function handleResume(agentId: string) {
+    setActioningId(agentId);
+    setError(null);
+    try {
+      await api.resumeAgent(agentId);
+      await refresh();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Failed to resume agent');
+    } finally {
+      setActioningId(null);
+    }
+  }
+
+  async function handleTerminate(agentId: string, agentName: string) {
+    if (!window.confirm(`Terminate "${agentName}"? This can't be undone from the UI.`)) return;
+    setActioningId(agentId);
+    setError(null);
+    try {
+      await api.terminateAgent(agentId);
+      await refresh();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Failed to terminate agent');
+    } finally {
+      setActioningId(null);
+    }
   }
 
   if (!session) return null;
@@ -115,20 +156,38 @@ export default function AgentsPage() {
           <p style={{ color: '#9aa0aa' }}>No agents yet — create one to get started.</p>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {agents.map((agent) => (
-              <Link
-                key={agent.id}
-                href={`/agents/${agent.id}/chat`}
-                className="card"
-                style={{ display: 'flex', justifyContent: 'space-between', textDecoration: 'none' }}
-              >
-                <div>
-                  <div style={{ fontWeight: 600 }}>{agent.name}</div>
-                  <div style={{ color: '#9aa0aa', fontSize: 13 }}>{agent.role}</div>
+            {agents.map((agent) => {
+              const busy = actioningId === agent.id;
+              return (
+                <div
+                  key={agent.id}
+                  className="card"
+                  style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+                >
+                  <Link href={`/agents/${agent.id}/chat`} style={{ textDecoration: 'none' }}>
+                    <div style={{ fontWeight: 600 }}>{agent.name}</div>
+                    <div style={{ color: '#9aa0aa', fontSize: 13 }}>{agent.role}</div>
+                  </Link>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <span style={{ color: '#9aa0aa', fontSize: 13 }}>{agent.status}</span>
+                    {agent.status === 'active' ? (
+                      <button className="secondary" disabled={busy} onClick={() => handlePause(agent.id)}>
+                        Pause
+                      </button>
+                    ) : agent.status === 'paused' ? (
+                      <button className="secondary" disabled={busy} onClick={() => handleResume(agent.id)}>
+                        Resume
+                      </button>
+                    ) : null}
+                    {agent.status !== 'terminated' ? (
+                      <button className="secondary" disabled={busy} onClick={() => handleTerminate(agent.id, agent.name)}>
+                        Terminate
+                      </button>
+                    ) : null}
+                  </div>
                 </div>
-                <div style={{ color: '#9aa0aa', fontSize: 13 }}>{agent.status}</div>
-              </Link>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
