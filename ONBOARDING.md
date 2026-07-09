@@ -54,15 +54,34 @@ Gotchas below).
 
 `docker-compose.yml` (gateway+web) does **not** start these — it expects them
 to already exist (this project's own dev setup points at shared
-infrastructure on the host machine). If you don't have your own already:
+infrastructure on the host machine). If you're on a team with shared dev
+infra already running, just ask for the connection details and skip to step 5.
+
+Otherwise, start your own with plain `docker run` (deliberately not a
+second compose file in this directory — a compose file here shares the same
+default project name as `docker-compose.yml`, and standing one up with
+different volume names than an existing setup can make Docker recreate
+those containers against fresh empty volumes, silently discarding whatever
+was in them):
 
 ```
-docker compose -f docker-compose.infra.yml up -d
+docker run -d --name o2n-dev-postgres -p 5532:5432 \
+  -e POSTGRES_DB=o2n -e POSTGRES_USER=o2n -e POSTGRES_PASSWORD=o2n_dev_password \
+  -v o2n_dev_postgres_data:/var/lib/postgresql/data \
+  -v "$(pwd)/migrations:/docker-entrypoint-initdb.d:ro" \
+  postgres:16
+
+docker run -d --name o2n-dev-redis -p 6479:6379 redis:7
+
+docker run -d --name o2n-dev-minio -p 9500:9000 -p 9501:9001 \
+  -e MINIO_ROOT_USER=o2n_minio -e MINIO_ROOT_PASSWORD=o2n_minio_password \
+  -v o2n_dev_minio_data:/data \
+  minio/minio server /data --console-address ":9001"
 ```
 
-This matches `.env.example`'s defaults exactly (ports 5532/6479/9500-9501,
-`o2n`/`o2n_dev_password`), so no `.env` edits needed. Migrations run
-automatically on first boot via Postgres's own `/docker-entrypoint-initdb.d`.
+Ports/credentials match `.env.example`'s defaults exactly, so no `.env`
+edits needed. Migrations run automatically on first boot via Postgres's own
+`/docker-entrypoint-initdb.d`.
 
 ## 5. Run it
 
@@ -130,3 +149,13 @@ pnpm turbo run build --filter=@o2n/gateway # just the gateway
   locally, temporarily switch to a paid-provider model name (the call can
   fail with a bad key — the approval queue entry still gets created before
   any LLM call happens).
+- **Don't add a second compose file in this directory for local infra.**
+  Docker Compose defaults the project name to the directory name, so any
+  `docker-compose.*.yml` here targets the same project as `docker-compose.yml`.
+  If it declares the same service names with *different* volume names,
+  bringing it up recreates the existing containers against fresh empty
+  volumes — Docker treats it as a config change, not a separate stack. This
+  actually happened during development (caught immediately via a row-count
+  check; the old volume was still on disk, just detached, so nothing was
+  permanently lost). Use plain `docker run` with distinct container/volume
+  names instead (see step 4).
