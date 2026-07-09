@@ -16,6 +16,9 @@ const EnvSchema = z.object({
   APPROVAL_THRESHOLD_CENTS: z.coerce.number().int().nonnegative().default(2000),
   SHORT_MEMORY_TTL_SECONDS: z.coerce.number().int().positive().default(3600),
   RATE_LIMIT_PER_MINUTE: z.coerce.number().int().positive().default(100),
+  // Optional: the telegram-send tool 400s with a clear message if unset,
+  // rather than every other route failing validation at startup.
+  TELEGRAM_BOT_TOKEN: z.string().min(1).optional(),
 });
 
 export type Env = z.infer<typeof EnvSchema>;

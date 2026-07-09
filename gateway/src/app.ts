@@ -10,6 +10,7 @@ import { registerChatRoutes } from './routes/chat.js';
 import { registerAuthRoutes } from './routes/auth.js';
 import { registerConfigRoutes } from './routes/config.js';
 import { registerApprovalRoutes } from './routes/approvals.js';
+import { registerToolRoutes } from './routes/tools.js';
 
 export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
   const app = Fastify({ logger: true });
@@ -25,6 +26,7 @@ export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
   registerChatRoutes(app, ctx);
   registerConfigRoutes(app, ctx);
   registerApprovalRoutes(app, ctx);
+  registerToolRoutes(app, ctx);
 
   return app;
 }
