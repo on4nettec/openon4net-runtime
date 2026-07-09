@@ -23,7 +23,7 @@ interface AccessTokenClaims {
   role: UserRole;
 }
 
-const PUBLIC_ROUTES = new Set(['/health', '/v1/auth/token']);
+const PUBLIC_ROUTES = new Set(['/health', '/metrics', '/v1/auth/token']);
 
 export function registerAuth(app: FastifyInstance, jwtSecret: string): void {
   app.addHook('onRequest', async (request: FastifyRequest, reply: FastifyReply) => {

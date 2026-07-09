@@ -1,5 +1,6 @@
 import { LlmProviderError, type LlmCompletionRequest, type LlmCompletionResult, type LlmProvider, type LlmStreamChunk } from '@o2n/llm-providers';
 import { ModelUnavailableError } from '@o2n/governance';
+import { llmRequestDurationSeconds, llmRequestsTotal } from '../observability/metrics.js';
 
 const RETRY_DELAY_MS = 500;
 
@@ -18,26 +19,43 @@ export class LlmService {
   constructor(private provider: LlmProvider) {}
 
   async completeWithRetry(req: LlmCompletionRequest): Promise<LlmCompletionResult> {
+    const start = Date.now();
+    const labels = { provider: this.provider.name, model: req.model };
     try {
-      return await this.provider.complete(req);
+      const result = await this.provider.complete(req);
+      this.recordMetrics(labels, start, 'success');
+      return result;
     } catch (err) {
       if (!(err instanceof LlmProviderError) || !err.retryable) {
+        this.recordMetrics(labels, start, 'error');
         throw new ModelUnavailableError(this.provider.name, err);
       }
       await sleep(RETRY_DELAY_MS);
       try {
-        return await this.provider.complete(req);
+        const result = await this.provider.complete(req);
+        this.recordMetrics(labels, start, 'success');
+        return result;
       } catch (err2) {
+        this.recordMetrics(labels, start, 'error');
         throw new ModelUnavailableError(this.provider.name, err2);
       }
     }
   }
 
   async *stream(req: LlmCompletionRequest): AsyncIterable<LlmStreamChunk> {
+    const start = Date.now();
+    const labels = { provider: this.provider.name, model: req.model };
     try {
       yield* this.provider.stream(req);
+      this.recordMetrics(labels, start, 'success');
     } catch (err) {
+      this.recordMetrics(labels, start, 'error');
       throw new ModelUnavailableError(this.provider.name, err);
     }
+  }
+
+  private recordMetrics(labels: { provider: string; model: string }, start: number, status: 'success' | 'error'): void {
+    llmRequestsTotal.inc({ ...labels, status });
+    llmRequestDurationSeconds.observe(labels, (Date.now() - start) / 1000);
   }
 }

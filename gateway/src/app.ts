@@ -3,7 +3,9 @@ import cors from '@fastify/cors';
 import type { AppContext } from './context.js';
 import { registerErrorHandler } from './plugins/error-handler.js';
 import { registerAuth } from './plugins/auth.js';
+import { httpRequestDurationSeconds, httpRequestsTotal } from './observability/metrics.js';
 import { registerHealthRoute } from './routes/health.js';
+import { registerMetricsRoute } from './routes/metrics.js';
 import { registerAgentRoutes } from './routes/agents.js';
 import { registerMemoryRoutes } from './routes/memory.js';
 import { registerChatRoutes } from './routes/chat.js';
@@ -17,8 +19,16 @@ export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
 
   await app.register(cors, { origin: true });
 
+  app.addHook('onResponse', async (request, reply) => {
+    const route = request.routeOptions?.url ?? request.url;
+    const labels = { method: request.method, route, status_code: String(reply.statusCode) };
+    httpRequestsTotal.inc(labels);
+    httpRequestDurationSeconds.observe(labels, reply.elapsedTime / 1000);
+  });
+
   registerErrorHandler(app);
   registerHealthRoute(app);
+  registerMetricsRoute(app);
   registerAuth(app, ctx.env.JWT_SECRET);
   registerAuthRoutes(app, ctx);
   registerAgentRoutes(app, ctx);

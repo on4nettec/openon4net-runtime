@@ -9,6 +9,7 @@ import { AuditService } from './audit-service.js';
 import { MemoryService, AUTO_SUMMARY_EVERY_N_MESSAGES } from './memory-service.js';
 import { LlmService } from './llm-service.js';
 import { calculateCostCents, estimateCostCentsFromChars, estimatePromptCostCents } from './pricing.js';
+import { llmCostCentsTotal } from '../observability/metrics.js';
 
 export interface ChatParams {
   organizationId: string;
@@ -144,6 +145,7 @@ export class ChatService {
         tokens: result.tokens,
       });
       await new AgentService(client).addUsedBudget(organizationId, agentId, result.costCents);
+      llmCostCentsTotal.inc({ provider: this.env.LLM_PROVIDER, model: result.model }, result.costCents);
       await new AuditService(client).logAction({
         organizationId,
         agentId,
