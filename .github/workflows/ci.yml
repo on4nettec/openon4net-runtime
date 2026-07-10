@@ -43,6 +43,22 @@ jobs:
         working-directory: parent
         run: pnpm install --frozen-lockfile
 
-      - name: Lint, typecheck, test, build
+      # Two separate invocations, not one `turbo run lint typecheck test build`.
+      # Three times now (2026-07-10: EmbeddingProvider, UserCreateSchema,
+      # WorkspaceCreateSchema), a new packages/* export consumed by
+      # @o2n/gateway in the same commit made this CI job fail with "no
+      # exported member", while a byte-identical clean clone always built
+      # 20/20 locally and a bare retrigger always went green with zero code
+      # changes - consistent with a turbo task-scheduling race under this
+      # runner's limited concurrency (typecheck/lint/test all declare
+      # dependsOn: ["^build"], but that's turbo's own scheduling guarantee,
+      # not an OS-level file-flush guarantee). Running build to full process
+      # exit first removes any ambiguity: every dist/ is on disk before
+      # typecheck/lint/test can start.
+      - name: Build (all packages, full dependency graph)
         working-directory: parent
-        run: pnpm turbo run lint typecheck test build
+        run: pnpm turbo run build
+
+      - name: Lint, typecheck, test
+        working-directory: parent
+        run: pnpm turbo run lint typecheck test
