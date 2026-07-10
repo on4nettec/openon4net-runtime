@@ -1,4 +1,4 @@
-import { NotFoundError } from '@o2n/governance';
+import { NotFoundError, ValidationError } from '@o2n/governance';
 import type { Queryable } from '../db.js';
 
 export interface RoleSummary {
@@ -71,5 +71,49 @@ export class PermissionService {
       ]);
     }
     return { id: role.id, name: role.name, isSystem: role.is_system, permissions };
+  }
+
+  /** Custom roles only (is_system=false) — starts with zero permissions, editable afterward via setRolePermissions. */
+  async createRole(organizationId: string, name: string): Promise<RoleSummary> {
+    const { rows: existing } = await this.db.query<{ id: string }>(
+      `SELECT id FROM roles WHERE organization_id = $1 AND name = $2`,
+      [organizationId, name],
+    );
+    if (existing[0]) throw new ValidationError(`A role named "${name}" already exists in this organization`);
+
+    const { rows } = await this.db.query<{ id: string; name: string; is_system: boolean }>(
+      `INSERT INTO roles (organization_id, name, is_system) VALUES ($1, $2, false) RETURNING id, name, is_system`,
+      [organizationId, name],
+    );
+    const role = rows[0];
+    if (!role) throw new Error('Insert did not return a row');
+    return { id: role.id, name: role.name, isSystem: role.is_system, permissions: [] };
+  }
+
+  /**
+   * Blocks deleting a system role (the 4 seeded ones) and blocks deleting a
+   * role that still has users bound to it — user_role_bindings.role_id has
+   * ON DELETE CASCADE, so an unblocked delete would silently strip those
+   * users of every permission instead of erroring loudly. Admin must
+   * reassign them to another role first.
+   */
+  async deleteRole(organizationId: string, roleId: string): Promise<void> {
+    const { rows: roleRows } = await this.db.query<{ id: string; is_system: boolean }>(
+      `SELECT id, is_system FROM roles WHERE id = $1 AND organization_id = $2`,
+      [roleId, organizationId],
+    );
+    const role = roleRows[0];
+    if (!role) throw new NotFoundError('Role', roleId);
+    if (role.is_system) throw new ValidationError('System roles cannot be deleted');
+
+    const { rows: boundUsers } = await this.db.query<{ count: string }>(
+      `SELECT count(*) FROM user_role_bindings WHERE role_id = $1`,
+      [roleId],
+    );
+    if (Number(boundUsers[0]?.count ?? 0) > 0) {
+      throw new ValidationError('Cannot delete a role that still has users assigned — reassign them first');
+    }
+
+    await this.db.query(`DELETE FROM roles WHERE id = $1 AND organization_id = $2`, [roleId, organizationId]);
   }
 }

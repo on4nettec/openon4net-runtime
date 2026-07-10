@@ -1,21 +1,33 @@
 import type { FastifyInstance } from 'fastify';
-import { RolePermissionsUpdateSchema } from '@o2n/shared';
+import { RoleCreateSchema, RolePermissionsUpdateSchema } from '@o2n/shared';
 import { ValidationError } from '@o2n/governance';
 import type { AppContext } from '../context.js';
 import { requirePermission } from '../lib/require-permission.js';
 
 /**
- * DB-backed RBAC management (migrations/0007_rbac.sql). Custom role
- * creation/deletion and workspace-scoped assignment UI are not implemented
- * in this pass — only editing an existing (system-seeded) role's
- * permissions, which is what makes the DB-backed model actually different
- * from the old hardcoded map: an admin can now change what "editor" can do
- * without a code deploy.
+ * DB-backed RBAC management (migrations/0007_rbac.sql). Workspace-scoped
+ * assignment UI (which workspace a user_role_binding applies to) is still
+ * not implemented — user creation always binds into the org's first
+ * workspace (see services/user-service.ts).
  */
 export function registerRoleRoutes(app: FastifyInstance, ctx: AppContext): void {
   app.get('/v1/roles', async (request) => {
     requirePermission(request, 'roles:read');
     return ctx.permissionService.listRoles(request.auth.organizationId);
+  });
+
+  app.post('/v1/roles', async (request) => {
+    requirePermission(request, 'roles:write');
+    const parsed = RoleCreateSchema.safeParse(request.body);
+    if (!parsed.success) throw new ValidationError('Invalid role payload', parsed.error.flatten());
+
+    return ctx.permissionService.createRole(request.auth.organizationId, parsed.data.name);
+  });
+
+  app.delete<{ Params: { id: string } }>('/v1/roles/:id', async (request, reply) => {
+    requirePermission(request, 'roles:write');
+    await ctx.permissionService.deleteRole(request.auth.organizationId, request.params.id);
+    return reply.status(204).send();
   });
 
   app.put<{ Params: { id: string } }>('/v1/roles/:id/permissions', async (request) => {

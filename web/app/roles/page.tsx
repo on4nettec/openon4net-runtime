@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { api, loadSession, ApiError } from '@/lib/api-client';
@@ -24,6 +24,8 @@ const PERMISSION_CATALOG: { resource: string; permissions: string[] }[] = [
   { resource: 'tools', permissions: ['tools:read', 'tools:telegram-send', 'tools:*'] },
   { resource: 'config', permissions: ['config:write'] },
   { resource: 'roles', permissions: ['roles:read', 'roles:write'] },
+  { resource: 'users', permissions: ['users:read', 'users:write'] },
+  { resource: 'workspaces', permissions: ['workspaces:read', 'workspaces:write'] },
 ];
 
 export default function RolesPage() {
@@ -35,6 +37,11 @@ export default function RolesPage() {
   const [draft, setDraft] = useState<Record<string, string[]>>({});
   const [savingId, setSavingId] = useState<string | null>(null);
   const [savedId, setSavedId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  const [newRoleName, setNewRoleName] = useState('');
+  const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
 
   function loadRoles() {
     return api
@@ -82,6 +89,35 @@ export default function RolesPage() {
     }
   }
 
+  async function handleCreateRole(e: FormEvent) {
+    e.preventDefault();
+    setCreating(true);
+    setCreateError(null);
+    try {
+      await api.createRole(newRoleName);
+      setNewRoleName('');
+      await loadRoles();
+    } catch (err) {
+      setCreateError(err instanceof ApiError ? err.message : 'Failed to create role');
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  async function handleDeleteRole(role: Role) {
+    if (!window.confirm(`Delete role "${role.name}"? This can't be undone.`)) return;
+    setDeletingId(role.id);
+    setError(null);
+    try {
+      await api.deleteRole(role.id);
+      await loadRoles();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Failed to delete role');
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
   return (
     <div>
       <div className="topbar">
@@ -117,7 +153,17 @@ export default function RolesPage() {
                 <div key={role.id} className="card">
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
                     <strong style={{ textTransform: 'capitalize' }}>{role.name}</strong>
-                    {role.isSystem ? <span style={{ color: '#9aa0aa', fontSize: 12 }}>system role</span> : null}
+                    {role.isSystem ? (
+                      <span style={{ color: '#9aa0aa', fontSize: 12 }}>system role</span>
+                    ) : (
+                      <button
+                        className="secondary"
+                        onClick={() => handleDeleteRole(role)}
+                        disabled={deletingId === role.id}
+                      >
+                        {deletingId === role.id ? 'Deleting…' : 'Delete'}
+                      </button>
+                    )}
                   </div>
 
                   {PERMISSION_CATALOG.map((group) => (
@@ -149,6 +195,28 @@ export default function RolesPage() {
                 </div>
               );
             })}
+
+            <div className="card">
+              <h2 style={{ fontSize: 16, marginTop: 0 }}>Add a custom role</h2>
+              <form onSubmit={handleCreateRole} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {createError ? <div className="error">{createError}</div> : null}
+                <label>
+                  Name
+                  <input
+                    value={newRoleName}
+                    onChange={(e) => setNewRoleName(e.target.value)}
+                    placeholder="e.g. Finance Reviewer"
+                    required
+                  />
+                </label>
+                <button type="submit" disabled={creating}>
+                  {creating ? 'Adding…' : 'Add role'}
+                </button>
+              </form>
+              <p style={{ color: '#9aa0aa', fontSize: 13, marginBottom: 0, marginTop: 10 }}>
+                Starts with zero permissions — check boxes above and Save once it appears in the list.
+              </p>
+            </div>
           </div>
         )}
       </div>

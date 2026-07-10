@@ -262,4 +262,12 @@ export const api = {
       `/v1/roles/${roleId}/permissions`,
       { method: 'PUT', body: JSON.stringify({ permissions }) },
     ),
+
+  createRole: (name: string) =>
+    request<{ id: string; name: string; isSystem: boolean; permissions: string[] }>('/v1/roles', {
+      method: 'POST',
+      body: JSON.stringify({ name }),
+    }),
+
+  deleteRole: (roleId: string) => request<void>(`/v1/roles/${roleId}`, { method: 'DELETE' }),
 };
