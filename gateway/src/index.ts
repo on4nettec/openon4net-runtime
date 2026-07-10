@@ -3,6 +3,7 @@ import { createDb } from './db.js';
 import { createRedis } from './redis.js';
 import { buildApp } from './app.js';
 import { ProviderConfigService } from './services/provider-config-service.js';
+import { PermissionService } from './services/permission-service.js';
 import type { AppContext } from './context.js';
 
 async function main(): Promise<void> {
@@ -14,6 +15,7 @@ async function main(): Promise<void> {
     db,
     redis: createRedis(env.REDIS_URL),
     providerConfigService: new ProviderConfigService(db, env),
+    permissionService: new PermissionService(db),
   };
 
   const app = await buildApp(ctx);

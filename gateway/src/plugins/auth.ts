@@ -3,11 +3,14 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import jwt from 'jsonwebtoken';
 import { PermissionDeniedError, ValidationError } from '@o2n/governance';
 import type { UserRole } from '@o2n/shared';
+import type { PermissionService } from '../services/permission-service.js';
 
 export interface AuthContext {
   userId: string;
   organizationId: string;
   role: UserRole;
+  /** Resolved once per request from the DB (migrations/0007_rbac.sql) — see lib/require-permission.ts. */
+  permissions: string[];
 }
 
 declare module 'fastify' {
@@ -25,7 +28,7 @@ interface AccessTokenClaims {
 
 const PUBLIC_ROUTES = new Set(['/health', '/metrics', '/v1/auth/token']);
 
-export function registerAuth(app: FastifyInstance, jwtSecret: string): void {
+export function registerAuth(app: FastifyInstance, jwtSecret: string, permissionService: PermissionService): void {
   app.addHook('onRequest', async (request: FastifyRequest, reply: FastifyReply) => {
     request.traceId = randomUUID();
     void reply.header('X-Trace-Id', request.traceId);
@@ -55,6 +58,7 @@ export function registerAuth(app: FastifyInstance, jwtSecret: string): void {
       throw new PermissionDeniedError('organization-scope');
     }
 
-    request.auth = { userId: claims.sub, organizationId: claims.organizationId, role: claims.role };
+    const permissions = await permissionService.getPermissions(claims.sub);
+    request.auth = { userId: claims.sub, organizationId: claims.organizationId, role: claims.role, permissions };
   });
 }

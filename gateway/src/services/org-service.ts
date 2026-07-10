@@ -1,5 +1,6 @@
-import type { Organization, Workspace, User } from '@o2n/shared';
-import type { Db } from '../db.js';
+import type { Organization, Workspace, User, UserRole } from '@o2n/shared';
+import { DEFAULT_ROLE_PERMISSIONS } from '@o2n/governance';
+import { withTransaction, type Db, type Queryable } from '../db.js';
 
 interface OrgRow {
   id: string;
@@ -79,31 +80,70 @@ export class OrgService {
   }
 
   private async createNew(slug: string, name: string): Promise<Bootstrapped> {
-    const { rows: orgRows } = await this.db.query<OrgRow>(
-      `INSERT INTO organizations (name, slug) VALUES ($1, $2) RETURNING *`,
-      [name, slug],
-    );
-    const org = orgRows[0];
-    if (!org) throw new Error('Insert did not return a row');
+    return withTransaction(this.db, async (client) => {
+      const { rows: orgRows } = await client.query<OrgRow>(
+        `INSERT INTO organizations (name, slug) VALUES ($1, $2) RETURNING *`,
+        [name, slug],
+      );
+      const org = orgRows[0];
+      if (!org) throw new Error('Insert did not return a row');
 
-    const { rows: wsRows } = await this.db.query<WorkspaceRow>(
-      `INSERT INTO workspaces (organization_id, name) VALUES ($1, $2) RETURNING *`,
-      [org.id, 'Default Workspace'],
-    );
-    const workspace = wsRows[0];
-    if (!workspace) throw new Error('Insert did not return a row');
+      const { rows: wsRows } = await client.query<WorkspaceRow>(
+        `INSERT INTO workspaces (organization_id, name) VALUES ($1, $2) RETURNING *`,
+        [org.id, 'Default Workspace'],
+      );
+      const workspace = wsRows[0];
+      if (!workspace) throw new Error('Insert did not return a row');
 
-    const { rows: userRows } = await this.db.query<UserRow>(
-      `INSERT INTO users (email, name, role, organization_id) VALUES ($1, $2, 'admin', $3) RETURNING *`,
-      [`admin@${slug}.local`, 'Admin', org.id],
-    );
-    const user = userRows[0];
-    if (!user) throw new Error('Insert did not return a row');
+      const { rows: userRows } = await client.query<UserRow>(
+        `INSERT INTO users (email, name, role, organization_id) VALUES ($1, $2, 'admin', $3) RETURNING *`,
+        [`admin@${slug}.local`, 'Admin', org.id],
+      );
+      const user = userRows[0];
+      if (!user) throw new Error('Insert did not return a row');
 
-    return {
-      organization: { id: org.id, name: org.name, slug: org.slug },
-      workspace: { id: workspace.id, name: workspace.name },
-      user: { id: user.id, email: user.email, role: user.role },
-    };
+      await seedRoles(client, org.id, workspace.id, user.id, user.role);
+
+      return {
+        organization: { id: org.id, name: org.name, slug: org.slug },
+        workspace: { id: workspace.id, name: workspace.name },
+        user: { id: user.id, email: user.email, role: user.role },
+      };
+    });
   }
+}
+
+/** DB-backed RBAC seed (migrations/0007_rbac.sql) — mirrors that migration's backfill for orgs created after it ran. */
+async function seedRoles(
+  client: Queryable,
+  organizationId: string,
+  workspaceId: string,
+  adminUserId: string,
+  adminRole: UserRole,
+): Promise<void> {
+  const roleIdByName = new Map<string, string>();
+  for (const roleName of Object.keys(DEFAULT_ROLE_PERMISSIONS) as UserRole[]) {
+    const { rows } = await client.query<{ id: string }>(
+      `INSERT INTO roles (organization_id, name, is_system) VALUES ($1, $2, true) RETURNING id`,
+      [organizationId, roleName],
+    );
+    const roleId = rows[0]?.id;
+    if (!roleId) throw new Error('Insert did not return a row');
+    roleIdByName.set(roleName, roleId);
+
+    for (const permission of DEFAULT_ROLE_PERMISSIONS[roleName]) {
+      await client.query(`INSERT INTO role_permissions (role_id, permission) VALUES ($1, $2)`, [
+        roleId,
+        permission,
+      ]);
+    }
+  }
+
+  const adminRoleId = roleIdByName.get(adminRole);
+  if (!adminRoleId) throw new Error(`No seeded role matches admin user's role: ${adminRole}`);
+  await client.query(`INSERT INTO user_role_bindings (user_id, role_id, workspace_id) VALUES ($1, $2, $3)`, [
+    adminUserId,
+    adminRoleId,
+    workspaceId,
+  ]);
 }
