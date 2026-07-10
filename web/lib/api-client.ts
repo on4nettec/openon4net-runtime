@@ -1,6 +1,6 @@
 'use client';
 
-import type { Agent, AgentCreateRequest, Conversation, ErrorEnvelope, Message, User, UserRole } from '@o2n/shared';
+import type { Agent, AgentCreateRequest, AuditLog, Conversation, ErrorEnvelope, Message, User, UserRole } from '@o2n/shared';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 
@@ -229,6 +229,15 @@ export const api = {
 
   createUser: (input: { email: string; name: string; role: UserRole }) =>
     request<User>('/v1/users', { method: 'POST', body: JSON.stringify(input) }),
+
+  getAuditLogs: (params: { limit?: number; offset?: number; agentId?: string } = {}) => {
+    const query = new URLSearchParams();
+    if (params.limit !== undefined) query.set('limit', String(params.limit));
+    if (params.offset !== undefined) query.set('offset', String(params.offset));
+    if (params.agentId) query.set('agentId', params.agentId);
+    const qs = query.toString();
+    return request<{ logs: AuditLog[]; total: number }>(`/v1/audit${qs ? `?${qs}` : ''}`);
+  },
 
   getRoles: () =>
     request<{ id: string; name: string; isSystem: boolean; permissions: string[] }[]>('/v1/roles'),

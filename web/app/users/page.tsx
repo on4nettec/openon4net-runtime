@@ -62,6 +62,7 @@ export default function UsersPage() {
         <nav>
           <strong>Users</strong>
           <Link href="/roles">Roles & Permissions</Link>
+          <Link href="/audit">Audit Log</Link>
           <Link href="/settings">Settings</Link>
         </nav>
       </div>

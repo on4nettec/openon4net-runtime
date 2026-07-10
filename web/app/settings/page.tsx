@@ -106,6 +106,7 @@ export default function SettingsPage() {
         <Link href="/agents">← Agents</Link>
         <nav>
           <strong>Settings</strong>
+          <Link href="/audit">Audit Log</Link>
           {isAdmin ? <Link href="/users">Users</Link> : null}
           {isAdmin ? <Link href="/roles">Roles & Permissions</Link> : null}
         </nav>
