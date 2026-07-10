@@ -1,5 +1,5 @@
 import type { Organization, Workspace, User, UserRole } from '@o2n/shared';
-import { DEFAULT_ROLE_PERMISSIONS, NotFoundError } from '@o2n/governance';
+import { DEFAULT_ROLE_PERMISSIONS, NotFoundError, ValidationError } from '@o2n/governance';
 import { withTransaction, type Db, type Queryable } from '../db.js';
 import { UserService } from './user-service.js';
 
@@ -78,6 +78,7 @@ export class OrgService {
     if (email) {
       const user = await new UserService(this.db).findByEmail(orgRow.id, email);
       if (!user) throw new NotFoundError('User', email);
+      if (!user.isActive) throw new ValidationError('This user account has been deactivated');
       return {
         organization: { id: orgRow.id, name: orgRow.name, slug: orgRow.slug },
         workspace: { id: workspace.id, name: workspace.name },
@@ -86,12 +87,12 @@ export class OrgService {
     }
 
     const { rows: users } = await this.db.query<UserRow>(
-      `SELECT * FROM users WHERE organization_id = $1 AND role = 'admin' ORDER BY created_at LIMIT 1`,
+      `SELECT * FROM users WHERE organization_id = $1 AND role = 'admin' AND is_active = true ORDER BY created_at LIMIT 1`,
       [orgRow.id],
     );
     const user = users[0];
     if (!user) {
-      throw new Error(`Organization ${orgRow.slug} is missing its default admin user`);
+      throw new Error(`Organization ${orgRow.slug} has no active admin user`);
     }
     return {
       organization: { id: orgRow.id, name: orgRow.name, slug: orgRow.slug },

@@ -1,4 +1,4 @@
-import type { User, UserCreateInput } from '@o2n/shared';
+import type { User, UserCreateInput, UserUpdateInput } from '@o2n/shared';
 import { NotFoundError, ValidationError } from '@o2n/governance';
 import { withTransaction, type Db } from '../db.js';
 
@@ -83,6 +83,57 @@ export class UserService {
       ]);
 
       return toUser(user);
+    });
+  }
+
+  /**
+   * role change re-syncs user_role_bindings too (delete existing, insert one
+   * for the new role) — the current model is one active role per user, same
+   * as create(). isActive just flips the column; a deactivated user is
+   * rejected at login (see services/org-service.ts) but keeps their audit
+   * history and conversations (no cascade, no physical delete — mirrors
+   * agents' soft-delete via status, see routes/agents.ts).
+   */
+  async update(organizationId: string, userId: string, input: UserUpdateInput): Promise<User> {
+    return withTransaction(this.db, async (client) => {
+      const { rows: existingRows } = await client.query<UserRow>(
+        `SELECT * FROM users WHERE id = $1 AND organization_id = $2`,
+        [userId, organizationId],
+      );
+      if (!existingRows[0]) throw new NotFoundError('User', userId);
+
+      if (input.role !== undefined) {
+        const { rows: roleRows } = await client.query<{ id: string }>(
+          `SELECT id FROM roles WHERE organization_id = $1 AND name = $2`,
+          [organizationId, input.role],
+        );
+        const roleId = roleRows[0]?.id;
+        if (!roleId) throw new NotFoundError('Role', input.role);
+
+        const { rows: wsRows } = await client.query<{ id: string }>(
+          `SELECT id FROM workspaces WHERE organization_id = $1 ORDER BY created_at LIMIT 1`,
+          [organizationId],
+        );
+        const workspaceId = wsRows[0]?.id;
+        if (!workspaceId) throw new Error(`Organization ${organizationId} has no workspace`);
+
+        await client.query(`UPDATE users SET role = $1 WHERE id = $2`, [input.role, userId]);
+        await client.query(`DELETE FROM user_role_bindings WHERE user_id = $1`, [userId]);
+        await client.query(`INSERT INTO user_role_bindings (user_id, role_id, workspace_id) VALUES ($1, $2, $3)`, [
+          userId,
+          roleId,
+          workspaceId,
+        ]);
+      }
+
+      if (input.isActive !== undefined) {
+        await client.query(`UPDATE users SET is_active = $1 WHERE id = $2`, [input.isActive, userId]);
+      }
+
+      const { rows: updatedRows } = await client.query<UserRow>(`SELECT * FROM users WHERE id = $1`, [userId]);
+      const updated = updatedRows[0];
+      if (!updated) throw new Error('Update did not return a row');
+      return toUser(updated);
     });
   }
 }

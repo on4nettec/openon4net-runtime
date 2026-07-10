@@ -240,6 +240,11 @@ export const api = {
   createUser: (input: { email: string; name: string; role: UserRole }) =>
     request<User>('/v1/users', { method: 'POST', body: JSON.stringify(input) }),
 
+  updateUser: (userId: string, input: { role?: UserRole; isActive?: boolean }) =>
+    request<User>(`/v1/users/${userId}`, { method: 'PATCH', body: JSON.stringify(input) }),
+
+  deactivateUser: (userId: string) => request<void>(`/v1/users/${userId}`, { method: 'DELETE' }),
+
   listWorkspaces: () => request<Workspace[]>('/v1/workspaces'),
 
   createWorkspace: (input: { name: string; description?: string | undefined }) =>
