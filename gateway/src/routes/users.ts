@@ -6,10 +6,12 @@ import { requirePermission } from '../lib/require-permission.js';
 import { UserService } from '../services/user-service.js';
 
 /**
- * Sprint 0 auth is still one shared org-wide API key (routes/auth.ts) — this
- * doesn't add per-user passwords. It lets an admin create additional named
- * users and bind them to a role, so someone can sign in (with the same
- * shared key + their email, see AuthTokenRequestSchema) as a non-admin.
+ * Creates a named user and binds them to a role. Doesn't itself grant them
+ * any way to sign in — that's a separate step per auth method (RT-014..018,
+ * see auth/registry.ts): dev_api_key signs in as any known email with the
+ * one shared org-wide key, while password/magic_link/oauth all require the
+ * user to separately set a credential (auth/providers/password.ts's
+ * `/v1/auth/password/set`, etc.) before they can use it.
  */
 export function registerUserRoutes(app: FastifyInstance, ctx: AppContext): void {
   const userService = new UserService(ctx.db);

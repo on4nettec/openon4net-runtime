@@ -26,8 +26,66 @@ function toUser(row: UserRow): User {
   };
 }
 
+export interface AuthRecord {
+  id: string;
+  role: User['role'];
+  isActive: boolean;
+  passwordHash: string | null;
+  oauthProvider: string | null;
+  oauthSubject: string | null;
+}
+
 export class UserService {
   constructor(private db: Db) {}
+
+  /**
+   * Fields the password/oauth/magic_link providers need that toUser()
+   * deliberately never exposes (password_hash especially must never reach a
+   * JSON response) — kept separate from list()/findByEmail() on purpose.
+   */
+  async findAuthRecordByEmail(organizationId: string, email: string): Promise<AuthRecord | null> {
+    const { rows } = await this.db.query<{
+      id: string;
+      role: User['role'];
+      is_active: boolean;
+      password_hash: string | null;
+      oauth_provider: string | null;
+      oauth_subject: string | null;
+    }>(
+      `SELECT id, role, is_active, password_hash, oauth_provider, oauth_subject
+       FROM users WHERE organization_id = $1 AND email = $2`,
+      [organizationId, email],
+    );
+    const row = rows[0];
+    if (!row) return null;
+    return {
+      id: row.id,
+      role: row.role,
+      isActive: row.is_active,
+      passwordHash: row.password_hash,
+      oauthProvider: row.oauth_provider,
+      oauthSubject: row.oauth_subject,
+    };
+  }
+
+  async setPasswordHash(userId: string, passwordHash: string): Promise<void> {
+    await this.db.query(`UPDATE users SET password_hash = $1 WHERE id = $2`, [passwordHash, userId]);
+  }
+
+  /** Links an oauth identity to an existing user on their first successful oauth login (found by email). */
+  async linkOauthIdentity(userId: string, provider: string, subject: string): Promise<void> {
+    await this.db.query(`UPDATE users SET oauth_provider = $1, oauth_subject = $2 WHERE id = $3`, [
+      provider,
+      subject,
+      userId,
+    ]);
+  }
+
+  async findById(userId: string): Promise<User | null> {
+    const { rows } = await this.db.query<UserRow>(`SELECT * FROM users WHERE id = $1`, [userId]);
+    const row = rows[0];
+    return row ? toUser(row) : null;
+  }
 
   async list(organizationId: string): Promise<User[]> {
     const { rows } = await this.db.query<UserRow>(

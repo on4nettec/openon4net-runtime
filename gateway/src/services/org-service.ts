@@ -41,15 +41,75 @@ export interface Bootstrapped {
   user: Pick<User, 'id' | 'email' | 'role'>;
 }
 
+export interface OrgAndDefaultWorkspace {
+  organization: Pick<Organization, 'id' | 'name' | 'slug'>;
+  workspace: Pick<Workspace, 'id' | 'name'>;
+}
+
 /**
  * Dev-mode "login" doubles as org bootstrap (docs/spect/09_TASKS/
  * 08-scope-guardrails-mvp.md requires the dashboard let a user create an
  * org/workspace, and Sprint 0 has no separate registration flow — see
- * routes/auth.ts). Idempotent: calling it again for the same slug just logs
- * back in as the existing default admin instead of creating a duplicate org.
+ * auth/providers/dev-api-key.ts). Idempotent: calling it again for the same
+ * slug just logs back in as the existing default admin instead of creating
+ * a duplicate org. The other auth providers (RT-015..017) use
+ * findOrgAndWorkspaceBySlug below instead — they never auto-create.
  */
 export class OrgService {
   constructor(private db: Db) {}
+
+  /**
+   * Read-only lookup for the auth providers that don't auto-bootstrap
+   * (password/magic_link/oauth — only dev_api_key does, see
+   * getOrCreateBootstrapped). Returns null on any missing piece so callers
+   * can fold "org doesn't exist" into the same generic error as "wrong
+   * credentials", instead of leaking which one it was.
+   */
+  async findOrgAndWorkspaceBySlug(slug: string): Promise<OrgAndDefaultWorkspace | null> {
+    const { rows: orgRows } = await this.db.query<OrgRow>(`SELECT * FROM organizations WHERE slug = $1`, [slug]);
+    const org = orgRows[0];
+    if (!org) return null;
+
+    const { rows: wsRows } = await this.db.query<WorkspaceRow>(
+      `SELECT * FROM workspaces WHERE organization_id = $1 ORDER BY created_at LIMIT 1`,
+      [org.id],
+    );
+    const workspace = wsRows[0];
+    if (!workspace) return null;
+
+    return {
+      organization: { id: org.id, name: org.name, slug: org.slug },
+      workspace: { id: workspace.id, name: workspace.name },
+    };
+  }
+
+  /** Used by magic_link verify, which only has a user_id (from magic_link_tokens) to start from. */
+  async getOrgAndWorkspaceForUser(userId: string): Promise<OrgAndDefaultWorkspace | null> {
+    const { rows: userRows } = await this.db.query<{ organization_id: string }>(
+      `SELECT organization_id FROM users WHERE id = $1`,
+      [userId],
+    );
+    const organizationId = userRows[0]?.organization_id;
+    if (!organizationId) return null;
+
+    const { rows: orgRows } = await this.db.query<OrgRow>(`SELECT * FROM organizations WHERE id = $1`, [
+      organizationId,
+    ]);
+    const org = orgRows[0];
+    if (!org) return null;
+
+    const { rows: wsRows } = await this.db.query<WorkspaceRow>(
+      `SELECT * FROM workspaces WHERE organization_id = $1 ORDER BY created_at LIMIT 1`,
+      [org.id],
+    );
+    const workspace = wsRows[0];
+    if (!workspace) return null;
+
+    return {
+      organization: { id: org.id, name: org.name, slug: org.slug },
+      workspace: { id: workspace.id, name: workspace.name },
+    };
+  }
 
   async getOrCreateBootstrapped(slug: string, name: string, email?: string): Promise<Bootstrapped> {
     const existing = await this.db.query<OrgRow>(`SELECT * FROM organizations WHERE slug = $1`, [slug]);

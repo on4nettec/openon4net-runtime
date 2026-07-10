@@ -11,6 +11,8 @@ export interface LogActionInput {
   costCents?: number | null;
   status?: AuditStatus;
   approvalStatus?: ApprovalStatus;
+  ipAddress?: string | null;
+  userAgent?: string | null;
 }
 
 export interface ListAuditLogsOptions {
@@ -61,8 +63,8 @@ export class AuditService {
   async logAction(input: LogActionInput): Promise<void> {
     await this.db.query(
       `INSERT INTO audit_logs
-         (organization_id, agent_id, user_id, action_type, action_data, model_used, cost_cents, status, approval_status)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+         (organization_id, agent_id, user_id, action_type, action_data, model_used, cost_cents, status, approval_status, ip_address, user_agent)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
       [
         input.organizationId,
         input.agentId ?? null,
@@ -73,6 +75,8 @@ export class AuditService {
         input.costCents ?? null,
         input.status ?? 'success',
         input.approvalStatus ?? 'auto',
+        input.ipAddress ?? null,
+        input.userAgent ?? null,
       ],
     );
   }

@@ -26,7 +26,21 @@ interface AccessTokenClaims {
   role: UserRole;
 }
 
-const PUBLIC_ROUTES = new Set(['/health', '/metrics', '/v1/auth/token']);
+// RT-014..018: every login entrypoint across all auth providers is
+// unauthenticated by definition (that's the point) — /v1/auth/password/set
+// is deliberately NOT here, since changing your own password requires an
+// existing session (see auth/providers/password.ts).
+const PUBLIC_ROUTES = new Set([
+  '/health',
+  '/metrics',
+  '/v1/auth/methods',
+  '/v1/auth/token',
+  '/v1/auth/password/login',
+  '/v1/auth/magic-link/request',
+  '/v1/auth/magic-link/verify',
+  '/v1/auth/oauth/:provider/start',
+  '/v1/auth/oauth/:provider/callback',
+]);
 
 export function registerAuth(app: FastifyInstance, jwtSecret: string, permissionService: PermissionService): void {
   app.addHook('onRequest', async (request: FastifyRequest, reply: FastifyReply) => {
