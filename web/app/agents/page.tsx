@@ -3,7 +3,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import type { Agent } from '@o2n/shared';
+import type { Agent, Workspace } from '@o2n/shared';
 import { api, loadSession, clearSession, ApiError, type Session } from '@/lib/api-client';
 
 export default function AgentsPage() {
@@ -16,6 +16,8 @@ export default function AgentsPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [name, setName] = useState('');
   const [role, setRole] = useState('');
+  const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
+  const [workspaceId, setWorkspaceId] = useState('');
   const [creating, setCreating] = useState(false);
   const [actioningId, setActioningId] = useState<string | null>(null);
 
@@ -26,7 +28,14 @@ export default function AgentsPage() {
       return;
     }
     setSession(s);
+    setWorkspaceId(s.workspaceId);
     void refresh();
+    // Best-effort: viewer/editor roles without workspaces:read just keep
+    // using the session's default workspace, no picker shown.
+    api
+      .listWorkspaces()
+      .then(setWorkspaces)
+      .catch(() => {});
   }, [router]);
 
   async function refresh() {
@@ -48,7 +57,7 @@ export default function AgentsPage() {
     try {
       const s = loadSession();
       if (!s) throw new Error('No session');
-      await api.createAgent({ name, role, workspaceId: s.workspaceId });
+      await api.createAgent({ name, role, workspaceId: workspaceId || s.workspaceId });
       setName('');
       setRole('');
       setShowCreate(false);
@@ -144,6 +153,18 @@ export default function AgentsPage() {
                 required
               />
             </div>
+            {workspaces.length > 1 ? (
+              <div className="field">
+                <label htmlFor="workspace">Workspace</label>
+                <select id="workspace" value={workspaceId} onChange={(e) => setWorkspaceId(e.target.value)}>
+                  {workspaces.map((w) => (
+                    <option key={w.id} value={w.id}>
+                      {w.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ) : null}
             <button type="submit" disabled={creating}>
               {creating ? 'Creating…' : 'Create agent'}
             </button>

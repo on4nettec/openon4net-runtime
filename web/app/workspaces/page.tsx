@@ -3,28 +3,25 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import type { User, UserRole } from '@o2n/shared';
+import type { Workspace } from '@o2n/shared';
 import { api, loadSession, ApiError } from '@/lib/api-client';
 
-const ROLES: UserRole[] = ['admin', 'manager', 'editor', 'viewer'];
-
-export default function UsersPage() {
+export default function WorkspacesPage() {
   const router = useRouter();
   const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
-  const [users, setUsers] = useState<User[]>([]);
+  const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [error, setError] = useState<string | null>(null);
 
-  const [email, setEmail] = useState('');
   const [name, setName] = useState('');
-  const [role, setRole] = useState<UserRole>('editor');
+  const [description, setDescription] = useState('');
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
 
-  function loadUsers() {
+  function loadWorkspaces() {
     return api
-      .listUsers()
-      .then(setUsers)
-      .catch((err) => setError(err instanceof ApiError ? err.message : 'Failed to load users'));
+      .listWorkspaces()
+      .then(setWorkspaces)
+      .catch((err) => setError(err instanceof ApiError ? err.message : 'Failed to load workspaces'));
   }
 
   useEffect(() => {
@@ -35,7 +32,7 @@ export default function UsersPage() {
     }
     const admin = session.role === 'admin';
     setIsAdmin(admin);
-    if (admin) loadUsers();
+    if (admin) loadWorkspaces();
   }, [router]);
 
   async function handleCreate(e: FormEvent) {
@@ -43,13 +40,12 @@ export default function UsersPage() {
     setCreating(true);
     setCreateError(null);
     try {
-      await api.createUser({ email, name, role });
-      setEmail('');
+      await api.createWorkspace({ name, description: description || undefined });
       setName('');
-      setRole('editor');
-      await loadUsers();
+      setDescription('');
+      await loadWorkspaces();
     } catch (err) {
-      setCreateError(err instanceof ApiError ? err.message : 'Failed to create user');
+      setCreateError(err instanceof ApiError ? err.message : 'Failed to create workspace');
     } finally {
       setCreating(false);
     }
@@ -60,8 +56,8 @@ export default function UsersPage() {
       <div className="topbar">
         <Link href="/agents">← Agents</Link>
         <nav>
-          <strong>Users</strong>
-          <Link href="/workspaces">Workspaces</Link>
+          <strong>Workspaces</strong>
+          <Link href="/users">Users</Link>
           <Link href="/roles">Roles & Permissions</Link>
           <Link href="/audit">Audit Log</Link>
           <Link href="/settings">Settings</Link>
@@ -69,16 +65,15 @@ export default function UsersPage() {
       </div>
 
       <div className="page">
-        <h1 style={{ fontSize: 20 }}>Users</h1>
+        <h1 style={{ fontSize: 20 }}>Workspaces</h1>
         <p style={{ color: '#9aa0aa', fontSize: 14 }}>
-          Everyone signs in with the same dev API key — a user&apos;s email just picks which identity (and role)
-          they sign in as. See <Link href="/roles">Roles & Permissions</Link> to change what a role can do.
+          Agents are created inside a workspace — pick which one when creating a new agent.
         </p>
 
         {error ? <div className="error">{error}</div> : null}
 
         {isAdmin === false ? (
-          <p style={{ color: '#9aa0aa' }}>Only organization admins can view or add users.</p>
+          <p style={{ color: '#9aa0aa' }}>Only organization admins can view or add workspaces.</p>
         ) : isAdmin === null ? (
           <p>Loading…</p>
         ) : (
@@ -87,17 +82,15 @@ export default function UsersPage() {
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
                 <thead>
                   <tr style={{ textAlign: 'left', color: '#9aa0aa', fontSize: 12 }}>
-                    <th style={{ paddingBottom: 8 }}>Email</th>
                     <th style={{ paddingBottom: 8 }}>Name</th>
-                    <th style={{ paddingBottom: 8 }}>Role</th>
+                    <th style={{ paddingBottom: 8 }}>Description</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {users.map((u) => (
-                    <tr key={u.id} style={{ borderTop: '1px solid #2c3038' }}>
-                      <td style={{ padding: '8px 0' }}>{u.email}</td>
-                      <td style={{ padding: '8px 0' }}>{u.name}</td>
-                      <td style={{ padding: '8px 0', textTransform: 'capitalize' }}>{u.role}</td>
+                  {workspaces.map((w) => (
+                    <tr key={w.id} style={{ borderTop: '1px solid #2c3038' }}>
+                      <td style={{ padding: '8px 0' }}>{w.name}</td>
+                      <td style={{ padding: '8px 0', color: '#9aa0aa' }}>{w.description ?? '—'}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -105,29 +98,19 @@ export default function UsersPage() {
             </div>
 
             <div className="card">
-              <h2 style={{ fontSize: 16, marginTop: 0 }}>Add a user</h2>
+              <h2 style={{ fontSize: 16, marginTop: 0 }}>Add a workspace</h2>
               <form onSubmit={handleCreate} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                 {createError ? <div className="error">{createError}</div> : null}
-                <label>
-                  Email
-                  <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
-                </label>
                 <label>
                   Name
                   <input value={name} onChange={(e) => setName(e.target.value)} required />
                 </label>
                 <label>
-                  Role
-                  <select value={role} onChange={(e) => setRole(e.target.value as UserRole)}>
-                    {ROLES.map((r) => (
-                      <option key={r} value={r}>
-                        {r}
-                      </option>
-                    ))}
-                  </select>
+                  Description (optional)
+                  <input value={description} onChange={(e) => setDescription(e.target.value)} />
                 </label>
                 <button type="submit" disabled={creating}>
-                  {creating ? 'Adding…' : 'Add user'}
+                  {creating ? 'Adding…' : 'Add workspace'}
                 </button>
               </form>
             </div>
