@@ -220,4 +220,13 @@ export const api = {
       '/v1/config/test-connection',
       { method: 'POST' },
     ),
+
+  getRoles: () =>
+    request<{ id: string; name: string; isSystem: boolean; permissions: string[] }[]>('/v1/roles'),
+
+  updateRolePermissions: (roleId: string, permissions: string[]) =>
+    request<{ id: string; name: string; isSystem: boolean; permissions: string[] }>(
+      `/v1/roles/${roleId}/permissions`,
+      { method: 'PUT', body: JSON.stringify({ permissions }) },
+    ),
 };

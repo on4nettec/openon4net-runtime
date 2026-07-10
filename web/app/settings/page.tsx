@@ -104,7 +104,10 @@ export default function SettingsPage() {
     <div>
       <div className="topbar">
         <Link href="/agents">← Agents</Link>
-        <strong>Settings</strong>
+        <nav>
+          <strong>Settings</strong>
+          {isAdmin ? <Link href="/roles">Roles & Permissions</Link> : null}
+        </nav>
       </div>
 
       <div className="page">
