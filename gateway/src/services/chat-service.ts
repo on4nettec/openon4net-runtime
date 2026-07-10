@@ -8,6 +8,7 @@ import { AgentService } from './agent-service.js';
 import { AuditService } from './audit-service.js';
 import { MemoryService, AUTO_SUMMARY_EVERY_N_MESSAGES } from './memory-service.js';
 import { LlmService } from './llm-service.js';
+import type { ProviderConfigService } from './provider-config-service.js';
 import { calculateCostCents, estimateCostCentsFromChars, estimatePromptCostCents } from './pricing.js';
 import { llmCostCentsTotal } from '../observability/metrics.js';
 
@@ -47,6 +48,8 @@ interface PreparedChat {
   llmMessages: LlmMessage[];
   model: string;
   promptChars: number;
+  llmProvider: LlmProvider;
+  providerName: string;
 }
 
 type PrepareOutcome = { kind: 'ready'; prepared: PreparedChat } | { kind: 'requires_approval'; approvalId: string };
@@ -60,17 +63,15 @@ function toLlmRole(role: 'user' | 'agent' | 'system' | 'tool'): 'user' | 'assist
 export class ChatService {
   private agentService: AgentService;
   private memoryService: MemoryService;
-  private llmService: LlmService;
 
   constructor(
     private db: Db,
     private redis: RedisClient,
-    llmProvider: LlmProvider,
+    private providerConfigService: ProviderConfigService,
     private env: Env,
   ) {
     this.agentService = new AgentService(db);
     this.memoryService = new MemoryService(db, redis, env.SHORT_MEMORY_TTL_SECONDS);
-    this.llmService = new LlmService(llmProvider);
   }
 
   /**
@@ -87,7 +88,10 @@ export class ChatService {
       throw new AgentNotActiveError(agent.id, agent.status);
     }
 
-    const model = agent.modelPreferences.primary ?? this.env.LLM_MODEL;
+    const { provider: llmProvider, model: defaultModel, providerName } = await this.providerConfigService.resolve(
+      params.organizationId,
+    );
+    const model = agent.modelPreferences.primary ?? defaultModel;
 
     // Budget gate 1: agent has no budget left at all -> hard stop.
     if (agent.usedBudgetCents >= agent.monthlyBudgetCents) {
@@ -97,7 +101,7 @@ export class ChatService {
     // Budget gate 2: this specific request's estimated cost exceeds the
     // approval threshold -> human-in-the-loop (build pack §4.3), not an error.
     if (!skipApprovalGate) {
-      const estimatedCostCents = estimatePromptCostCents(model, params.message.length, this.env.LLM_PROVIDER);
+      const estimatedCostCents = estimatePromptCostCents(model, params.message.length, providerName);
       if (requiresApproval(estimatedCostCents, this.env.APPROVAL_THRESHOLD_CENTS)) {
         const approvalId = await this.enqueueApproval(params, agent.id, estimatedCostCents);
         return { kind: 'requires_approval', approvalId };
@@ -125,7 +129,10 @@ export class ChatService {
     ];
     const promptChars = llmMessages.reduce((sum, m) => sum + m.content.length, 0);
 
-    return { kind: 'ready', prepared: { agent, conversation, llmMessages, model, promptChars } };
+    return {
+      kind: 'ready',
+      prepared: { agent, conversation, llmMessages, model, promptChars, llmProvider, providerName },
+    };
   }
 
   private async persistTurn(
@@ -134,6 +141,7 @@ export class ChatService {
     userId: string,
     agentId: string,
     traceId: string,
+    providerName: string,
     result: { content: string; model: string; costCents: number; tokens: number },
   ): Promise<void> {
     await withTransaction(this.db, async (client) => {
@@ -145,7 +153,7 @@ export class ChatService {
         tokens: result.tokens,
       });
       await new AgentService(client).addUsedBudget(organizationId, agentId, result.costCents);
-      llmCostCentsTotal.inc({ provider: this.env.LLM_PROVIDER, model: result.model }, result.costCents);
+      llmCostCentsTotal.inc({ provider: providerName, model: result.model }, result.costCents);
       await new AuditService(client).logAction({
         organizationId,
         agentId,
@@ -162,11 +170,12 @@ export class ChatService {
   private async callModel(
     messages: LlmMessage[],
     model: string,
+    llmProvider: LlmProvider,
     params: ChatParams,
     agentId: string,
   ): Promise<LlmCompletionResult> {
     try {
-      return await this.llmService.completeWithRetry({ model, messages });
+      return await new LlmService(llmProvider).completeWithRetry({ model, messages });
     } catch (err) {
       await new AuditService(this.db).logAction({
         organizationId: params.organizationId,
@@ -184,24 +193,27 @@ export class ChatService {
   async chat(params: ChatParams, skipApprovalGate = false): Promise<ChatOutcome> {
     const outcome = await this.prepare(params, skipApprovalGate);
     if (outcome.kind === 'requires_approval') return outcome;
-    const { agent, conversation, llmMessages, model } = outcome.prepared;
+    const { agent, conversation, llmMessages, model, llmProvider, providerName } = outcome.prepared;
 
-    const result = await this.callModel(llmMessages, model, params, agent.id);
-    const costCents = calculateCostCents(
-      result.model,
-      result.inputTokens,
-      result.outputTokens,
-      this.env.LLM_PROVIDER,
+    const result = await this.callModel(llmMessages, model, llmProvider, params, agent.id);
+    const costCents = calculateCostCents(result.model, result.inputTokens, result.outputTokens, providerName);
+
+    await this.persistTurn(
+      conversation.id,
+      params.organizationId,
+      params.userId,
+      agent.id,
+      params.traceId,
+      providerName,
+      {
+        content: result.content,
+        model: result.model,
+        costCents,
+        tokens: result.inputTokens + result.outputTokens,
+      },
     );
 
-    await this.persistTurn(conversation.id, params.organizationId, params.userId, agent.id, params.traceId, {
-      content: result.content,
-      model: result.model,
-      costCents,
-      tokens: result.inputTokens + result.outputTokens,
-    });
-
-    await this.maybeSummarize(conversation.id, model);
+    await this.maybeSummarize(conversation.id, model, llmProvider);
 
     return {
       kind: 'success',
@@ -219,12 +231,12 @@ export class ChatService {
       yield { type: 'requires_approval', approvalId: outcome.approvalId };
       return;
     }
-    const { agent, conversation, llmMessages, model, promptChars } = outcome.prepared;
+    const { agent, conversation, llmMessages, model, promptChars, llmProvider, providerName } = outcome.prepared;
 
     const start = Date.now();
     let full = '';
     try {
-      for await (const chunk of this.llmService.stream({ model, messages: llmMessages })) {
+      for await (const chunk of new LlmService(llmProvider).stream({ model, messages: llmMessages })) {
         full += chunk.delta;
         yield { type: 'token', delta: chunk.delta };
       }
@@ -241,15 +253,23 @@ export class ChatService {
       throw err;
     }
 
-    const costCents = estimateCostCentsFromChars(model, promptChars, full.length, this.env.LLM_PROVIDER);
-    await this.persistTurn(conversation.id, params.organizationId, params.userId, agent.id, params.traceId, {
-      content: full,
-      model,
-      costCents,
-      tokens: Math.ceil((promptChars + full.length) / 4),
-    });
+    const costCents = estimateCostCentsFromChars(model, promptChars, full.length, providerName);
+    await this.persistTurn(
+      conversation.id,
+      params.organizationId,
+      params.userId,
+      agent.id,
+      params.traceId,
+      providerName,
+      {
+        content: full,
+        model,
+        costCents,
+        tokens: Math.ceil((promptChars + full.length) / 4),
+      },
+    );
 
-    await this.maybeSummarize(conversation.id, model);
+    await this.maybeSummarize(conversation.id, model, llmProvider);
 
     yield {
       type: 'done',
@@ -294,14 +314,14 @@ export class ChatService {
     });
   }
 
-  private async maybeSummarize(conversationId: string, model: string): Promise<void> {
+  private async maybeSummarize(conversationId: string, model: string, llmProvider: LlmProvider): Promise<void> {
     const conversation = await this.memoryService.getConversationById(conversationId);
     if (conversation.messageCount === 0 || conversation.messageCount % AUTO_SUMMARY_EVERY_N_MESSAGES !== 0) {
       return;
     }
     const recent = await this.memoryService.getRecentMessages(conversationId, AUTO_SUMMARY_EVERY_N_MESSAGES);
     const transcript = recent.map((m) => `${m.role}: ${m.content}`).join('\n');
-    const summaryResult = await this.llmService.completeWithRetry({
+    const summaryResult = await new LlmService(llmProvider).completeWithRetry({
       model,
       messages: [
         {

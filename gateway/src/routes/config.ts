@@ -1,26 +1,34 @@
 import type { FastifyInstance } from 'fastify';
+import { LlmConfigSetSchema } from '@o2n/shared';
+import { ValidationError } from '@o2n/governance';
 import type { AppContext } from '../context.js';
 import { requirePermission } from '../lib/require-permission.js';
 
-function maskKey(key: string): string {
-  if (key.length <= 8) return '••••••••';
-  return `${key.slice(0, 4)}${'•'.repeat(key.length - 8)}${key.slice(-4)}`;
-}
-
 /**
- * Read-only for Sprint 0 — editable BYOK key management is deferred to
- * Sprint 1+ (see the settings page in web/app/settings/page.tsx).
+ * Per-org BYOK config, DB-backed override of the env-wide default (see
+ * services/provider-config-service.ts). Any authenticated org member can
+ * view (masked) config; only admins (config:write) can change it, since
+ * this is where the org's LLM API key gets set.
  */
 export function registerConfigRoutes(app: FastifyInstance, ctx: AppContext): void {
-  app.get('/v1/config', async () => ({
-    llmProvider: ctx.env.LLM_PROVIDER,
-    llmModel: ctx.env.LLM_MODEL,
-    llmApiKeyMasked: maskKey(ctx.env.LLM_API_KEY),
-    approvalThresholdCents: ctx.env.APPROVAL_THRESHOLD_CENTS,
-    rateLimitPerMinute: ctx.env.RATE_LIMIT_PER_MINUTE,
-  }));
+  app.get('/v1/config', async (request) => {
+    const effective = await ctx.providerConfigService.getEffectiveConfig(request.auth.organizationId);
+    return {
+      ...effective,
+      approvalThresholdCents: ctx.env.APPROVAL_THRESHOLD_CENTS,
+      rateLimitPerMinute: ctx.env.RATE_LIMIT_PER_MINUTE,
+    };
+  });
 
-  // A real (not mocked) minimal completion call against the configured
+  app.put('/v1/config', async (request) => {
+    requirePermission(request, 'config:write');
+    const parsed = LlmConfigSetSchema.safeParse(request.body);
+    if (!parsed.success) throw new ValidationError('Invalid config payload', parsed.error.flatten());
+
+    return ctx.providerConfigService.setConfig(request.auth.organizationId, request.auth.userId, parsed.data);
+  });
+
+  // A real (not mocked) minimal completion call against the org's configured
   // provider — costs a handful of tokens, gated the same as chat since it
   // spends real money on paid providers. Never throws: the settings page
   // wants a pass/fail, not a 500.
@@ -28,8 +36,9 @@ export function registerConfigRoutes(app: FastifyInstance, ctx: AppContext): voi
     requirePermission(request, 'agents:chat');
     const start = Date.now();
     try {
-      const result = await ctx.llmProvider.complete({
-        model: ctx.env.LLM_MODEL,
+      const { provider, model } = await ctx.providerConfigService.resolve(request.auth.organizationId);
+      const result = await provider.complete({
+        model,
         messages: [{ role: 'user', content: 'Reply with exactly: OK' }],
         maxTokens: 5,
       });

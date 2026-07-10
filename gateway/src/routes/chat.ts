@@ -7,7 +7,7 @@ import { createAgentRateLimiter } from '../plugins/rate-limiter.js';
 import { ChatService } from '../services/chat-service.js';
 
 export function registerChatRoutes(app: FastifyInstance, ctx: AppContext): void {
-  const chatService = new ChatService(ctx.db, ctx.redis, ctx.llmProvider, ctx.env);
+  const chatService = new ChatService(ctx.db, ctx.redis, ctx.providerConfigService, ctx.env);
   const checkRateLimit = createAgentRateLimiter(ctx.redis, ctx.env.RATE_LIMIT_PER_MINUTE);
 
   app.post<{ Params: { id: string } }>(

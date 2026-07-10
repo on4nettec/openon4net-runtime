@@ -19,6 +19,9 @@ const EnvSchema = z.object({
   // Optional: the telegram-send tool 400s with a clear message if unset,
   // rather than every other route failing validation at startup.
   TELEGRAM_BOT_TOKEN: z.string().min(1).optional(),
+  // AES-256-GCM master key for per-org llm_configs.api_key_encrypted (see
+  // gateway/src/lib/crypto.ts). Generate with `openssl rand -hex 32`.
+  CONFIG_ENCRYPTION_KEY: z.string().regex(/^[0-9a-f]{64}$/i, 'must be a 64-char hex string (32 bytes)'),
 });
 
 export type Env = z.infer<typeof EnvSchema>;

@@ -45,6 +45,12 @@ Open `.env` and fill in:
     (`ollama pull gemma3:4b`), set `LLM_PROVIDER=ollama`, `LLM_API_KEY=ollama`
     (unchecked, but the SDK requires a non-empty string), `LLM_MODEL=gemma3:4b`.
     This is free and fully local — what this project's own dev/testing uses.
+  - This is just the runtime-wide fallback. Any org's admin can override it
+    per-organization from the dashboard's Settings page (stored encrypted in
+    `llm_configs`, no restart needed) — see `CONFIG_ENCRYPTION_KEY` below.
+- `CONFIG_ENCRYPTION_KEY` — 64 hex chars (32 bytes), used to encrypt
+  per-organization BYOK overrides at rest. Generate with
+  `openssl rand -hex 32`.
 
 **This one `.env` file is read by both `pnpm dev` and `docker compose`** —
 don't create a second one under `gateway/`, it will drift out of sync (see
@@ -159,3 +165,9 @@ pnpm turbo run build --filter=@o2n/gateway # just the gateway
   check; the old volume was still on disk, just detached, so nothing was
   permanently lost). Use plain `docker run` with distinct container/volume
   names instead (see step 4).
+- **New migration files don't auto-apply to an already-running Postgres
+  volume.** `/docker-entrypoint-initdb.d` only runs on first container init
+  against an empty data directory — it won't pick up a new
+  `migrations/000N_*.sql` file added after that. Apply it by hand against a
+  volume that already has data:
+  `docker exec -i <postgres-container> psql -U o2n -d o2n < migrations/000N_*.sql`.

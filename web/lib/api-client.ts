@@ -197,12 +197,23 @@ export const api = {
 
   getConfig: () =>
     request<{
-      llmProvider: string;
-      llmModel: string;
-      llmApiKeyMasked: string;
+      provider: string;
+      model: string;
+      apiKeyMasked: string;
+      baseUrl: string | null;
+      source: 'database' | 'env';
       approvalThresholdCents: number;
       rateLimitPerMinute: number;
     }>('/v1/config'),
+
+  updateConfig: (input: { provider: string; model: string; apiKey: string; baseUrl?: string | undefined }) =>
+    request<{
+      provider: string;
+      model: string;
+      apiKeyMasked: string;
+      baseUrl: string | null;
+      source: 'database' | 'env';
+    }>('/v1/config', { method: 'PUT', body: JSON.stringify(input) }),
 
   testConnection: () =>
     request<{ success: boolean; model?: string; error?: string; responseTimeMs: number }>(
