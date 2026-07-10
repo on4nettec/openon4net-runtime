@@ -23,7 +23,15 @@ export default function AgentChatPage() {
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [rateLimit, setRateLimit] = useState<{ usedThisMinute: number; limitPerMinute: number } | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+
+  function loadRateLimit() {
+    api
+      .getRateLimitStatus(agentId)
+      .then(setRateLimit)
+      .catch(() => {}); // non-fatal, purely informational
+  }
 
   /** Authoritative reload from the server — used both on page mount and after a dropped connection. */
   async function loadHistory(): Promise<number> {
@@ -49,6 +57,7 @@ export default function AgentChatPage() {
     loadHistory().catch((err) =>
       setNotice(err instanceof ApiError ? err.message : 'Failed to load conversation history'),
     );
+    loadRateLimit();
   }, [agentId, router]);
 
   useEffect(() => {
@@ -86,6 +95,7 @@ export default function AgentChatPage() {
             return next;
           });
           setSending(false);
+          loadRateLimit();
         },
         onRequiresApproval: () => {
           setMessages((prev) => prev.slice(0, -1)); // drop the pending placeholder
@@ -135,6 +145,17 @@ export default function AgentChatPage() {
         <Link href="/agents">← Agents</Link>
         <nav>
           <strong>{agent?.name ?? 'Loading…'}</strong>
+          {rateLimit ? (
+            <span
+              style={{
+                fontSize: 12,
+                color: rateLimit.usedThisMinute >= rateLimit.limitPerMinute ? '#f2555a' : '#9aa0aa',
+              }}
+              title="Requests this minute"
+            >
+              {rateLimit.usedThisMinute}/{rateLimit.limitPerMinute} req/min
+            </span>
+          ) : null}
           <Link href="/settings">Settings</Link>
         </nav>
       </div>

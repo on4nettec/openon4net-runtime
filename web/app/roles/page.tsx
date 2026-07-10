@@ -21,7 +21,7 @@ const PERMISSION_CATALOG: { resource: string; permissions: string[] }[] = [
   { resource: 'audit', permissions: ['audit:read'] },
   { resource: 'approvals', permissions: ['approvals:read', 'approvals:approve', 'approvals:*'] },
   { resource: 'billing', permissions: ['billing:wallet:read'] },
-  { resource: 'tools', permissions: ['tools:read', 'tools:telegram-send', 'tools:*'] },
+  { resource: 'tools', permissions: ['tools:read', 'tools:telegram-send', 'tools:webhook-send', 'tools:*'] },
   { resource: 'config', permissions: ['config:write'] },
   { resource: 'roles', permissions: ['roles:read', 'roles:write'] },
   { resource: 'users', permissions: ['users:read', 'users:write'] },
@@ -126,6 +126,7 @@ export default function RolesPage() {
           <strong>Roles & Permissions</strong>
           <Link href="/workspaces">Workspaces</Link>
           <Link href="/users">Users</Link>
+          <Link href="/policies">Policies</Link>
           <Link href="/audit">Audit Log</Link>
           <Link href="/settings">Settings</Link>
         </nav>

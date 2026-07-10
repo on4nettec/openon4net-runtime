@@ -4,6 +4,7 @@ import { ValidationError } from '@o2n/governance';
 import type { AppContext } from '../context.js';
 import { withTransaction } from '../db.js';
 import { requirePermission } from '../lib/require-permission.js';
+import { getRateLimitStatus } from '../plugins/rate-limiter.js';
 import { AgentService } from '../services/agent-service.js';
 import { AuditService } from '../services/audit-service.js';
 import { MemoryService } from '../services/memory-service.js';
@@ -102,6 +103,13 @@ export function registerAgentRoutes(app: FastifyInstance, ctx: AppContext): void
       });
       return agent;
     });
+  });
+
+  // Read-only, doesn't consume a request against the limit itself.
+  app.get<{ Params: { id: string } }>('/v1/agents/:id/rate-limit', async (request) => {
+    requirePermission(request, 'agents:read');
+    await agentService.getById(request.auth.organizationId, request.params.id); // org-scope check, 404s otherwise
+    return getRateLimitStatus(ctx.redis, request.params.id, ctx.env.RATE_LIMIT_PER_MINUTE);
   });
 
   // Used by the dashboard to resume a chat on page load instead of starting empty every time.

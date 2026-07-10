@@ -9,7 +9,14 @@ import { ChatService } from '../services/chat-service.js';
 export function registerApprovalRoutes(app: FastifyInstance, ctx: AppContext): void {
   const approvalService = new ApprovalService(ctx.db);
   const auditService = new AuditService(ctx.db);
-  const chatService = new ChatService(ctx.db, ctx.redis, ctx.providerConfigService, ctx.env, ctx.embeddingService);
+  const chatService = new ChatService(
+    ctx.db,
+    ctx.redis,
+    ctx.providerConfigService,
+    ctx.env,
+    ctx.embeddingService,
+    ctx.policyService,
+  );
 
   app.get('/v1/approvals/pending', async (request) => {
     requirePermission(request, 'approvals:read');

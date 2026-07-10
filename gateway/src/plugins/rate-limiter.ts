@@ -22,3 +22,26 @@ export function createAgentRateLimiter(redis: RedisClient, limitPerMinute: numbe
     }
   };
 }
+
+export interface RateLimitStatus {
+  usedThisMinute: number;
+  limitPerMinute: number;
+  resetsInSeconds: number;
+}
+
+/** Read-only — does not increment the counter, safe to poll from the dashboard. */
+export async function getRateLimitStatus(
+  redis: RedisClient,
+  agentId: string,
+  limitPerMinute: number,
+): Promise<RateLimitStatus> {
+  const now = Date.now();
+  const period = Math.floor(now / 60_000);
+  const key = `ratelimit:${agentId}:${period}`;
+
+  const raw = await redis.get(key);
+  const usedThisMinute = raw ? Number(raw) : 0;
+  const resetsInSeconds = 60 - Math.floor((now % 60_000) / 1000);
+
+  return { usedThisMinute, limitPerMinute, resetsInSeconds };
+}

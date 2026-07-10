@@ -202,12 +202,20 @@ export const api = {
   createAgent: (input: AgentCreateRequest) =>
     request<Agent>('/v1/agents', { method: 'POST', body: JSON.stringify(input) }),
 
+  updateAgentSchedule: (id: string, schedule: { enabled: boolean; intervalMinutes?: number; prompt?: string }) =>
+    request<Agent>(`/v1/agents/${id}`, { method: 'PATCH', body: JSON.stringify({ schedule }) }),
+
   pauseAgent: (id: string) => request<Agent>(`/v1/agents/${id}/pause`, { method: 'POST' }),
   resumeAgent: (id: string) => request<Agent>(`/v1/agents/${id}/resume`, { method: 'POST' }),
   terminateAgent: (id: string) => request<void>(`/v1/agents/${id}`, { method: 'DELETE' }),
 
   getLatestConversation: (agentId: string) =>
     request<{ conversation: Conversation | null; messages: Message[] }>(`/v1/agents/${agentId}/conversation`),
+
+  getRateLimitStatus: (agentId: string) =>
+    request<{ usedThisMinute: number; limitPerMinute: number; resetsInSeconds: number }>(
+      `/v1/agents/${agentId}/rate-limit`,
+    ),
 
   getConfig: () =>
     request<{
@@ -275,4 +283,36 @@ export const api = {
     }),
 
   deleteRole: (roleId: string) => request<void>(`/v1/roles/${roleId}`, { method: 'DELETE' }),
+
+  listPolicies: () =>
+    request<
+      {
+        id: string;
+        name: string;
+        condition:
+          | { type: 'cost_gt_cents'; value: number }
+          | { type: 'outside_hours'; startHour: number; endHour: number };
+        isActive: boolean;
+        createdAt: string;
+      }[]
+    >('/v1/policies'),
+
+  createPolicy: (input: {
+    name: string;
+    condition:
+      | { type: 'cost_gt_cents'; value: number }
+      | { type: 'outside_hours'; startHour: number; endHour: number };
+  }) =>
+    request<{ id: string; name: string; condition: unknown; isActive: boolean; createdAt: string }>(
+      '/v1/policies',
+      { method: 'POST', body: JSON.stringify(input) },
+    ),
+
+  updatePolicy: (id: string, isActive: boolean) =>
+    request<{ id: string; name: string; condition: unknown; isActive: boolean; createdAt: string }>(
+      `/v1/policies/${id}`,
+      { method: 'PATCH', body: JSON.stringify({ isActive }) },
+    ),
+
+  deletePolicy: (id: string) => request<void>(`/v1/policies/${id}`, { method: 'DELETE' }),
 };

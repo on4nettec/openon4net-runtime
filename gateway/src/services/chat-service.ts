@@ -10,12 +10,14 @@ import { MemoryService, AUTO_SUMMARY_EVERY_N_MESSAGES } from './memory-service.j
 import { LlmService } from './llm-service.js';
 import type { ProviderConfigService } from './provider-config-service.js';
 import type { EmbeddingService } from './embedding-service.js';
+import type { PolicyService } from './policy-service.js';
 import { calculateCostCents, estimateCostCentsFromChars, estimatePromptCostCents } from './pricing.js';
 import { llmCostCentsTotal } from '../observability/metrics.js';
 
 export interface ChatParams {
   organizationId: string;
-  userId: string;
+  /** null for system-initiated turns (the scheduler, see services/scheduler.ts) — no human user to attribute. */
+  userId: string | null;
   agentId: string;
   message: string;
   conversationId?: string | undefined;
@@ -71,6 +73,7 @@ export class ChatService {
     private providerConfigService: ProviderConfigService,
     private env: Env,
     private embeddingService: EmbeddingService,
+    private policyService: PolicyService,
   ) {
     this.agentService = new AgentService(db);
     this.memoryService = new MemoryService(db, redis, env.SHORT_MEMORY_TTL_SECONDS, embeddingService);
@@ -101,11 +104,15 @@ export class ChatService {
     }
 
     // Budget gate 2: this specific request's estimated cost exceeds the
-    // approval threshold -> human-in-the-loop (build pack §4.3), not an error.
+    // approval threshold -> human-in-the-loop (build pack §4.3), not an
+    // error. Additive with org-configured ABAC policies (RT-008) - either
+    // one triggering is enough, neither replaces the other.
     if (!skipApprovalGate) {
       const estimatedCostCents = estimatePromptCostCents(model, params.message.length, providerName);
-      if (requiresApproval(estimatedCostCents, this.env.APPROVAL_THRESHOLD_CENTS)) {
-        const approvalId = await this.enqueueApproval(params, agent.id, estimatedCostCents);
+      const envThresholdHit = requiresApproval(estimatedCostCents, this.env.APPROVAL_THRESHOLD_CENTS);
+      const policyResult = await this.policyService.evaluate(params.organizationId, { estimatedCostCents });
+      if (envThresholdHit || policyResult.requiresApproval) {
+        const approvalId = await this.enqueueApproval(params, agent.id, estimatedCostCents, policyResult.matchedPolicyNames);
         return { kind: 'requires_approval', approvalId };
       }
     }
@@ -140,7 +147,7 @@ export class ChatService {
   private async persistTurn(
     conversationId: string,
     organizationId: string,
-    userId: string,
+    userId: string | null,
     agentId: string,
     traceId: string,
     providerName: string,
@@ -283,7 +290,16 @@ export class ChatService {
     };
   }
 
-  private async enqueueApproval(params: ChatParams, agentId: string, estimatedCostCents: number): Promise<string> {
+  private async enqueueApproval(
+    params: ChatParams,
+    agentId: string,
+    estimatedCostCents: number,
+    matchedPolicyNames: string[] = [],
+  ): Promise<string> {
+    const reason =
+      matchedPolicyNames.length > 0
+        ? `Matched policy: ${matchedPolicyNames.join(', ')} (estimated cost ${estimatedCostCents} cents)`
+        : `Estimated cost ${estimatedCostCents} cents exceeds threshold ${this.env.APPROVAL_THRESHOLD_CENTS} cents`;
     return withTransaction(this.db, async (client) => {
       const { rows } = await client.query<{ id: string }>(
         `INSERT INTO approval_queue (organization_id, agent_id, action_data, reason)
@@ -297,8 +313,9 @@ export class ChatService {
             conversationId: params.conversationId ?? null,
             userId: params.userId,
             estimatedCostCents,
+            matchedPolicyNames,
           }),
-          `Estimated cost ${estimatedCostCents} cents exceeds threshold ${this.env.APPROVAL_THRESHOLD_CENTS} cents`,
+          reason,
         ],
       );
       const row = rows[0];

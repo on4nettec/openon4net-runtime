@@ -13,6 +13,12 @@ const TOOLS: ToolDefinition[] = [
     description: 'Sends a text message to a Telegram chat via the configured bot.',
     requiredPermission: 'tools:telegram-send',
   },
+  {
+    id: 'webhook-send',
+    name: 'Webhook Send',
+    description: 'POSTs a JSON payload to any external HTTP(S) URL (blocks private/internal network targets).',
+    requiredPermission: 'tools:webhook-send',
+  },
 ];
 
 export function listTools(): ToolDefinition[] {

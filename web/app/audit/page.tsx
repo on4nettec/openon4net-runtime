@@ -63,6 +63,7 @@ export default function AuditPage() {
           <Link href="/workspaces">Workspaces</Link>
           <Link href="/roles">Roles & Permissions</Link>
           <Link href="/users">Users</Link>
+          <Link href="/policies">Policies</Link>
         </nav>
       </div>
 

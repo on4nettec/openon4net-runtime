@@ -110,6 +110,7 @@ export default function SettingsPage() {
           {isAdmin ? <Link href="/workspaces">Workspaces</Link> : null}
           {isAdmin ? <Link href="/users">Users</Link> : null}
           {isAdmin ? <Link href="/roles">Roles & Permissions</Link> : null}
+          {isAdmin ? <Link href="/policies">Policies</Link> : null}
         </nav>
       </div>
 
