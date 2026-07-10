@@ -9,6 +9,7 @@ export default function LoginPage() {
   const [apiKey, setApiKey] = useState('');
   const [organizationSlug, setOrganizationSlug] = useState('');
   const [organizationName, setOrganizationName] = useState('');
+  const [email, setEmail] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -21,6 +22,7 @@ export default function LoginPage() {
         apiKey,
         organizationSlug,
         organizationName: organizationName || undefined,
+        email: email || undefined,
       });
       saveSession(session);
       router.push('/agents');
@@ -67,6 +69,16 @@ export default function LoginPage() {
             onChange={(e) => setApiKey(e.target.value)}
             placeholder="DEV_API_KEY from .env"
             required
+          />
+        </div>
+        <div className="field">
+          <label htmlFor="email">Sign in as (optional)</label>
+          <input
+            id="email"
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="Leave blank to sign in as the org admin"
           />
         </div>
         <button type="submit" disabled={loading} style={{ width: '100%' }}>

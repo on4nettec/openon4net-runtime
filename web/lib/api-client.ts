@@ -1,6 +1,6 @@
 'use client';
 
-import type { Agent, AgentCreateRequest, Conversation, ErrorEnvelope, Message } from '@o2n/shared';
+import type { Agent, AgentCreateRequest, Conversation, ErrorEnvelope, Message, User, UserRole } from '@o2n/shared';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 
@@ -178,8 +178,12 @@ export async function streamChat(
 }
 
 export const api = {
-  login: (input: { apiKey: string; organizationSlug: string; organizationName?: string | undefined }) =>
-    request<Session>('/v1/auth/token', { method: 'POST', body: JSON.stringify(input) }),
+  login: (input: {
+    apiKey: string;
+    organizationSlug: string;
+    organizationName?: string | undefined;
+    email?: string | undefined;
+  }) => request<Session>('/v1/auth/token', { method: 'POST', body: JSON.stringify(input) }),
 
   listAgents: () => request<Agent[]>('/v1/agents'),
 
@@ -220,6 +224,11 @@ export const api = {
       '/v1/config/test-connection',
       { method: 'POST' },
     ),
+
+  listUsers: () => request<User[]>('/v1/users'),
+
+  createUser: (input: { email: string; name: string; role: UserRole }) =>
+    request<User>('/v1/users', { method: 'POST', body: JSON.stringify(input) }),
 
   getRoles: () =>
     request<{ id: string; name: string; isSystem: boolean; permissions: string[] }[]>('/v1/roles'),

@@ -88,6 +88,7 @@ export default function RolesPage() {
         <Link href="/agents">← Agents</Link>
         <nav>
           <strong>Roles & Permissions</strong>
+          <Link href="/users">Users</Link>
           <Link href="/settings">Settings</Link>
         </nav>
       </div>

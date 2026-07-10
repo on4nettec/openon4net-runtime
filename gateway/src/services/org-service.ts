@@ -1,6 +1,7 @@
 import type { Organization, Workspace, User, UserRole } from '@o2n/shared';
-import { DEFAULT_ROLE_PERMISSIONS } from '@o2n/governance';
+import { DEFAULT_ROLE_PERMISSIONS, NotFoundError } from '@o2n/governance';
 import { withTransaction, type Db, type Queryable } from '../db.js';
+import { UserService } from './user-service.js';
 
 interface OrgRow {
   id: string;
@@ -50,27 +51,47 @@ export interface Bootstrapped {
 export class OrgService {
   constructor(private db: Db) {}
 
-  async getOrCreateBootstrapped(slug: string, name: string): Promise<Bootstrapped> {
+  async getOrCreateBootstrapped(slug: string, name: string, email?: string): Promise<Bootstrapped> {
     const existing = await this.db.query<OrgRow>(`SELECT * FROM organizations WHERE slug = $1`, [slug]);
     if (existing.rows[0]) {
-      return this.loadExisting(existing.rows[0]);
+      return this.loadExisting(existing.rows[0], email);
     }
     return this.createNew(slug, name);
   }
 
-  private async loadExisting(orgRow: OrgRow): Promise<Bootstrapped> {
+  /**
+   * email is optional (see AuthTokenRequestSchema) — unset means "sign in as
+   * the org's admin", matching the original single-admin-only behavior.
+   * When set, it must match an already-created user (see routes/users.ts) —
+   * this never auto-creates a user, only the very first bootstrap does that.
+   */
+  private async loadExisting(orgRow: OrgRow, email?: string): Promise<Bootstrapped> {
     const { rows: workspaces } = await this.db.query<WorkspaceRow>(
       `SELECT * FROM workspaces WHERE organization_id = $1 ORDER BY created_at LIMIT 1`,
       [orgRow.id],
     );
+    const workspace = workspaces[0];
+    if (!workspace) {
+      throw new Error(`Organization ${orgRow.slug} is missing its default workspace`);
+    }
+
+    if (email) {
+      const user = await new UserService(this.db).findByEmail(orgRow.id, email);
+      if (!user) throw new NotFoundError('User', email);
+      return {
+        organization: { id: orgRow.id, name: orgRow.name, slug: orgRow.slug },
+        workspace: { id: workspace.id, name: workspace.name },
+        user: { id: user.id, email: user.email, role: user.role },
+      };
+    }
+
     const { rows: users } = await this.db.query<UserRow>(
       `SELECT * FROM users WHERE organization_id = $1 AND role = 'admin' ORDER BY created_at LIMIT 1`,
       [orgRow.id],
     );
-    const workspace = workspaces[0];
     const user = users[0];
-    if (!workspace || !user) {
-      throw new Error(`Organization ${orgRow.slug} is missing its default workspace/admin user`);
+    if (!user) {
+      throw new Error(`Organization ${orgRow.slug} is missing its default admin user`);
     }
     return {
       organization: { id: orgRow.id, name: orgRow.name, slug: orgRow.slug },

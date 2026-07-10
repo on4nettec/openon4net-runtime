@@ -25,6 +25,7 @@ export function registerAuthRoutes(app: FastifyInstance, ctx: AppContext): void 
     const { organization, workspace, user } = await orgService.getOrCreateBootstrapped(
       parsed.data.organizationSlug,
       parsed.data.organizationName ?? parsed.data.organizationSlug,
+      parsed.data.email,
     );
 
     const token = jwt.sign(

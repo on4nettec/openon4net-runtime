@@ -14,6 +14,7 @@ import { registerConfigRoutes } from './routes/config.js';
 import { registerApprovalRoutes } from './routes/approvals.js';
 import { registerToolRoutes } from './routes/tools.js';
 import { registerRoleRoutes } from './routes/roles.js';
+import { registerUserRoutes } from './routes/users.js';
 
 export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
   const app = Fastify({ logger: true });
@@ -39,6 +40,7 @@ export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
   registerApprovalRoutes(app, ctx);
   registerToolRoutes(app, ctx);
   registerRoleRoutes(app, ctx);
+  registerUserRoutes(app, ctx);
 
   return app;
 }
