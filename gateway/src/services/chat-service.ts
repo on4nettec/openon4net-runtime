@@ -9,6 +9,7 @@ import { AuditService } from './audit-service.js';
 import { MemoryService, AUTO_SUMMARY_EVERY_N_MESSAGES } from './memory-service.js';
 import { LlmService } from './llm-service.js';
 import type { ProviderConfigService } from './provider-config-service.js';
+import type { EmbeddingService } from './embedding-service.js';
 import { calculateCostCents, estimateCostCentsFromChars, estimatePromptCostCents } from './pricing.js';
 import { llmCostCentsTotal } from '../observability/metrics.js';
 
@@ -69,9 +70,10 @@ export class ChatService {
     private redis: RedisClient,
     private providerConfigService: ProviderConfigService,
     private env: Env,
+    private embeddingService: EmbeddingService,
   ) {
     this.agentService = new AgentService(db);
-    this.memoryService = new MemoryService(db, redis, env.SHORT_MEMORY_TTL_SECONDS);
+    this.memoryService = new MemoryService(db, redis, env.SHORT_MEMORY_TTL_SECONDS, embeddingService);
   }
 
   /**
@@ -145,7 +147,7 @@ export class ChatService {
     result: { content: string; model: string; costCents: number; tokens: number },
   ): Promise<void> {
     await withTransaction(this.db, async (client) => {
-      await new MemoryService(client, this.redis, this.env.SHORT_MEMORY_TTL_SECONDS).appendMessage(conversationId, {
+      await new MemoryService(client, this.redis, this.env.SHORT_MEMORY_TTL_SECONDS, this.embeddingService).appendMessage(conversationId, {
         role: 'agent',
         content: result.content,
         model: result.model,

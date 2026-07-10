@@ -10,7 +10,7 @@ import { MemoryService } from '../services/memory-service.js';
 
 export function registerAgentRoutes(app: FastifyInstance, ctx: AppContext): void {
   const agentService = new AgentService(ctx.db);
-  const memoryService = new MemoryService(ctx.db, ctx.redis, ctx.env.SHORT_MEMORY_TTL_SECONDS);
+  const memoryService = new MemoryService(ctx.db, ctx.redis, ctx.env.SHORT_MEMORY_TTL_SECONDS, ctx.embeddingService);
 
   // Every write below runs in a transaction with its own audit_logs insert —
   // an agent mutation must never be committed without an audit trail

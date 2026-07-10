@@ -2,6 +2,12 @@ import type { Conversation, Message, MessageRole } from '@o2n/shared';
 import { NotFoundError } from '@o2n/governance';
 import type { Queryable } from '../db.js';
 import type { RedisClient } from '../redis.js';
+import type { EmbeddingService } from './embedding-service.js';
+
+/** pgvector literal format: '[0.1,0.2,...]' */
+function toVectorLiteral(embedding: number[]): string {
+  return `[${embedding.join(',')}]`;
+}
 
 interface ConversationRow {
   id: string;
@@ -67,6 +73,7 @@ export class MemoryService {
     private db: Queryable,
     private redis: RedisClient,
     private shortMemoryTtlSeconds: number,
+    private embeddingService: EmbeddingService,
   ) {}
 
   // --- L2: Postgres conversation memory ---
@@ -142,6 +149,15 @@ export class MemoryService {
 
     await this.appendToShortMemory(conversationId, { role: input.role, content: input.content });
 
+    // Best-effort — EmbeddingService.embed() never throws, returns null when
+    // disabled or on failure, in which case the message just stays
+    // unsearchable semantically (searchMessagesSemantic falls back to ILIKE
+    // regardless, per-row, since this column is nullable).
+    const embedding = await this.embeddingService.embed(input.content);
+    if (embedding) {
+      await this.db.query(`UPDATE messages SET embedding = $2 WHERE id = $1`, [row.id, toVectorLiteral(embedding)]);
+    }
+
     return toMessage(row);
   }
 
@@ -160,6 +176,29 @@ export class MemoryService {
        ORDER BY created_at DESC
        LIMIT $3`,
       [conversationId, `%${query}%`, limit],
+    );
+    return rows.map(toMessage);
+  }
+
+  /**
+   * Cosine-similarity search over messages.embedding (migrations/0008_vector_search.sql).
+   * Caller must check embeddingService.enabled first — if the query itself
+   * fails to embed (provider error), falls back to searchMessages(). Rows
+   * with a NULL embedding (written before this feature was enabled, or when
+   * embedding generation failed for that specific message) are excluded by
+   * the `IS NOT NULL` filter, not surfaced as false matches.
+   */
+  async searchMessagesSemantic(conversationId: string, query: string, limit: number): Promise<Message[]> {
+    const queryEmbedding = await this.embeddingService.embed(query);
+    if (!queryEmbedding) {
+      return this.searchMessages(conversationId, query, limit);
+    }
+    const { rows } = await this.db.query<MessageRow>(
+      `SELECT * FROM messages
+       WHERE conversation_id = $1 AND embedding IS NOT NULL
+       ORDER BY embedding <=> $2
+       LIMIT $3`,
+      [conversationId, toVectorLiteral(queryEmbedding), limit],
     );
     return rows.map(toMessage);
   }

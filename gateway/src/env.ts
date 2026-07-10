@@ -22,6 +22,11 @@ const EnvSchema = z.object({
   // AES-256-GCM master key for per-org llm_configs.api_key_encrypted (see
   // gateway/src/lib/crypto.ts). Generate with `openssl rand -hex 32`.
   CONFIG_ENCRYPTION_KEY: z.string().regex(/^[0-9a-f]{64}$/i, 'must be a 64-char hex string (32 bytes)'),
+  // Optional: enables semantic memory search (migrations/0008_vector_search.sql).
+  // Only takes effect when LLM_PROVIDER is openai or ollama — see
+  // packages/llm-providers/src/embedding.ts for why. Left unset, memory
+  // search silently falls back to the plain ILIKE search it always had.
+  EMBEDDING_MODEL: z.string().min(1).optional(),
 });
 
 export type Env = z.infer<typeof EnvSchema>;

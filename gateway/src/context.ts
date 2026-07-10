@@ -3,6 +3,7 @@ import type { Db } from './db.js';
 import type { RedisClient } from './redis.js';
 import type { ProviderConfigService } from './services/provider-config-service.js';
 import type { PermissionService } from './services/permission-service.js';
+import type { EmbeddingService } from './services/embedding-service.js';
 
 export interface AppContext {
   env: Env;
@@ -10,4 +11,5 @@ export interface AppContext {
   redis: RedisClient;
   providerConfigService: ProviderConfigService;
   permissionService: PermissionService;
+  embeddingService: EmbeddingService;
 }

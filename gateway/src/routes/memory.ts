@@ -8,7 +8,7 @@ import { MemoryService } from '../services/memory-service.js';
 
 export function registerMemoryRoutes(app: FastifyInstance, ctx: AppContext): void {
   const agentService = new AgentService(ctx.db);
-  const memoryService = new MemoryService(ctx.db, ctx.redis, ctx.env.SHORT_MEMORY_TTL_SECONDS);
+  const memoryService = new MemoryService(ctx.db, ctx.redis, ctx.env.SHORT_MEMORY_TTL_SECONDS, ctx.embeddingService);
 
   app.post('/v1/memory/write', async (request) => {
     requirePermission(request, 'memory:write');
@@ -31,15 +31,19 @@ export function registerMemoryRoutes(app: FastifyInstance, ctx: AppContext): voi
     const parsed = MemorySearchSchema.safeParse(request.body);
     if (!parsed.success) throw new ValidationError('Invalid memory search payload', parsed.error.flatten());
 
-    // Sprint 0: conversation-scoped plain-text search only (no embeddings/
-    // vector search, no org-wide search across all conversations — layers
-    // 3-6 and semantic memory are out of MVP scope).
+    // Conversation-scoped search only — no org-wide search across all
+    // conversations, no Layers 3-6 or Memory Graph (still out of MVP scope,
+    // see docs/spect/DONE.md). Semantic search (pgvector cosine similarity)
+    // is used when EMBEDDING_MODEL is configured; otherwise falls back to
+    // the plain ILIKE search this always had.
     if (!parsed.data.conversationId) {
       throw new ValidationError('conversationId is required in this version of memory search');
     }
     const conversation = await memoryService.getConversationById(parsed.data.conversationId);
     await agentService.getById(request.auth.organizationId, conversation.agentId);
 
-    return memoryService.searchMessages(conversation.id, parsed.data.query, parsed.data.limit);
+    return ctx.embeddingService.enabled
+      ? memoryService.searchMessagesSemantic(conversation.id, parsed.data.query, parsed.data.limit)
+      : memoryService.searchMessages(conversation.id, parsed.data.query, parsed.data.limit);
   });
 }

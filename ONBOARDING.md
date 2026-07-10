@@ -51,6 +51,10 @@ Open `.env` and fill in:
 - `CONFIG_ENCRYPTION_KEY` — 64 hex chars (32 bytes), used to encrypt
   per-organization BYOK overrides at rest. Generate with
   `openssl rand -hex 32`.
+- `EMBEDDING_MODEL` — optional, enables semantic memory search. Leave unset
+  to skip it (memory search stays on plain ILIKE). Only works when
+  `LLM_PROVIDER=openai` or `ollama`. For ollama:
+  `ollama pull nomic-embed-text`, then `EMBEDDING_MODEL=nomic-embed-text`.
 
 **This one `.env` file is read by both `pnpm dev` and `docker compose`** —
 don't create a second one under `gateway/`, it will drift out of sync (see
@@ -75,7 +79,7 @@ docker run -d --name o2n-dev-postgres -p 5532:5432 \
   -e POSTGRES_DB=o2n -e POSTGRES_USER=o2n -e POSTGRES_PASSWORD=o2n_dev_password \
   -v o2n_dev_postgres_data:/var/lib/postgresql/data \
   -v "$(pwd)/migrations:/docker-entrypoint-initdb.d:ro" \
-  postgres:16
+  pgvector/pgvector:pg16
 
 docker run -d --name o2n-dev-redis -p 6479:6379 redis:7
 
@@ -88,6 +92,11 @@ docker run -d --name o2n-dev-minio -p 9500:9000 -p 9501:9001 \
 Ports/credentials match `.env.example`'s defaults exactly, so no `.env`
 edits needed. Migrations run automatically on first boot via Postgres's own
 `/docker-entrypoint-initdb.d`.
+
+`pgvector/pgvector:pg16` (not plain `postgres:16`) is used so the `vector`
+extension migration (`0008_vector_search.sql`, semantic memory search) has
+something to install into — it's a drop-in replacement, same data format,
+nothing else about setup changes.
 
 ## 5. Run it
 
@@ -171,3 +180,13 @@ pnpm turbo run build --filter=@o2n/gateway # just the gateway
   `migrations/000N_*.sql` file added after that. Apply it by hand against a
   volume that already has data:
   `docker exec -i <postgres-container> psql -U o2n -d o2n < migrations/000N_*.sql`.
+- **Before removing/recreating any container that holds real data, check
+  which volume it's actually mounted to — don't assume from these docs.**
+  A container originally started via `docker compose` gets an
+  auto-named volume (`<project>_<service>`, e.g.
+  `openon4net-runtime_postgres_data`), which is a *different* volume than
+  the `o2n_dev_postgres_data` name this doc's own `docker run` command
+  above uses for fresh setups. `docker inspect <container> --format
+  '{{ .Mounts }}'` first, every time — recreating a container against the
+  wrong (empty) volume name looks identical to a successful restart until
+  you query it and find no tables.
