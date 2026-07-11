@@ -2,6 +2,7 @@ import { loadEnv } from './env.js';
 import { createDb } from './db.js';
 import { createRedis } from './redis.js';
 import { buildApp } from './app.js';
+import { runMigrations } from './migrator.js';
 import { ProviderConfigService } from './services/provider-config-service.js';
 import { PermissionService } from './services/permission-service.js';
 import { EmbeddingService } from './services/embedding-service.js';
@@ -11,6 +12,15 @@ import type { AppContext } from './context.js';
 
 async function main(): Promise<void> {
   const env = loadEnv();
+
+  // RT-029: fail-fast is intentional here — a half-migrated schema must not
+  // serve traffic. Disable via DB_AUTO_MIGRATE=false for environments where
+  // migrations are reviewed/applied out-of-band (`pnpm run migrate` covers
+  // that manual path); see scripts/migrate.mjs.
+  if (env.DB_AUTO_MIGRATE) {
+    await runMigrations(env.DATABASE_URL, (msg) => console.log(`[migrate] ${msg}`));
+  }
+
   const db = createDb(env.DATABASE_URL);
 
   const ctx: AppContext = {

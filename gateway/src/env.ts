@@ -32,6 +32,11 @@ const EnvSchema = z
     DATABASE_URL: z.string().min(1),
     REDIS_URL: z.string().min(1),
     JWT_SECRET: z.string().min(1),
+    // RT-029: applies migrations/*.sql on every startup (tracked in
+    // schema_migrations, advisory-locked — see scripts/migrate.mjs).
+    // Disable for environments where migrations must be reviewed/applied
+    // out-of-band (`pnpm run migrate` covers that manual path).
+    DB_AUTO_MIGRATE: boolEnv(true),
     // Only required when the dev_api_key auth method is actually enabled —
     // see the superRefine below and auth/providers/dev-api-key.ts.
     DEV_API_KEY: z.string().min(1).optional(),
