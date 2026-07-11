@@ -1,12 +1,14 @@
 import type { LlmCompletionResult, LlmMessage, LlmProvider } from '@o2n/llm-providers';
 import type { Agent, Conversation } from '@o2n/shared';
-import { AgentNotActiveError, BudgetExceededError, O2NError, requiresApproval } from '@o2n/governance';
+import { AgentNotActiveError, BudgetExceededError, NotFoundError, O2NError, requiresApproval } from '@o2n/governance';
 import type { Env } from '../env.js';
 import { withTransaction, type Db } from '../db.js';
 import type { RedisClient } from '../redis.js';
 import { AgentService } from './agent-service.js';
+import { AgentAccessService } from './agent-access-service.js';
 import { AuditService } from './audit-service.js';
 import { MemoryService, AUTO_SUMMARY_EVERY_N_MESSAGES } from './memory-service.js';
+import { UserService } from './user-service.js';
 import { LlmService } from './llm-service.js';
 import type { ProviderConfigService } from './provider-config-service.js';
 import type { EmbeddingService } from './embedding-service.js';
@@ -66,6 +68,8 @@ function toLlmRole(role: 'user' | 'agent' | 'system' | 'tool'): 'user' | 'assist
 export class ChatService {
   private agentService: AgentService;
   private memoryService: MemoryService;
+  private agentAccessService: AgentAccessService;
+  private userService: UserService;
 
   constructor(
     private db: Db,
@@ -77,6 +81,8 @@ export class ChatService {
   ) {
     this.agentService = new AgentService(db);
     this.memoryService = new MemoryService(db, redis, env.SHORT_MEMORY_TTL_SECONDS, embeddingService);
+    this.agentAccessService = new AgentAccessService(db);
+    this.userService = new UserService(db);
   }
 
   /**
@@ -89,6 +95,21 @@ export class ChatService {
    */
   private async prepare(params: ChatParams, skipApprovalGate = false): Promise<PrepareOutcome> {
     const agent = await this.agentService.getById(params.organizationId, params.agentId);
+
+    // RT-024: null userId is the scheduler (system-initiated, see
+    // services/scheduler.ts) — always allowed, there's no human to gate.
+    // Role is re-fetched fresh from the DB rather than trusted from a JWT
+    // claim, since this also runs for the approvals.ts re-execution path
+    // where the acting "user" (the original requester) may differ from
+    // whoever is currently authenticated (the approver).
+    if (params.userId) {
+      const user = await this.userService.findById(params.userId);
+      if (user && user.role !== 'admin') {
+        const hasAccess = await this.agentAccessService.hasAccess(agent.id, params.userId);
+        if (!hasAccess) throw new NotFoundError('Agent', agent.id);
+      }
+    }
+
     if (agent.status !== 'active') {
       throw new AgentNotActiveError(agent.id, agent.status);
     }

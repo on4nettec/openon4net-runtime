@@ -3,6 +3,7 @@ import { TelegramSendSchema, WebhookSendSchema } from '@o2n/shared';
 import { ValidationError } from '@o2n/governance';
 import type { AppContext } from '../context.js';
 import { requirePermission } from '../lib/require-permission.js';
+import { requireAgentAccessible } from '../lib/agent-access.js';
 import { listTools } from '../services/tool-registry.js';
 import { AgentService } from '../services/agent-service.js';
 import { AuditService } from '../services/audit-service.js';
@@ -20,6 +21,7 @@ export function registerToolRoutes(app: FastifyInstance, ctx: AppContext): void 
 
   app.post<{ Params: { id: string } }>('/v1/agents/:id/tools/telegram-send', async (request) => {
     requirePermission(request, 'tools:telegram-send');
+    await requireAgentAccessible(ctx, request, request.params.id);
     const parsed = TelegramSendSchema.safeParse(request.body);
     if (!parsed.success) throw new ValidationError('Invalid telegram-send payload', parsed.error.flatten());
 
@@ -56,6 +58,7 @@ export function registerToolRoutes(app: FastifyInstance, ctx: AppContext): void 
 
   app.post<{ Params: { id: string } }>('/v1/agents/:id/tools/webhook-send', async (request) => {
     requirePermission(request, 'tools:webhook-send');
+    await requireAgentAccessible(ctx, request, request.params.id);
     const parsed = WebhookSendSchema.safeParse(request.body);
     if (!parsed.success) throw new ValidationError('Invalid webhook-send payload', parsed.error.flatten());
 

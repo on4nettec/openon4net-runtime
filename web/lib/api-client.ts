@@ -315,4 +315,27 @@ export const api = {
     ),
 
   deletePolicy: (id: string) => request<void>(`/v1/policies/${id}`, { method: 'DELETE' }),
+
+  listAgentAccess: (agentId: string) =>
+    request<
+      {
+        id: string;
+        agentId: string;
+        userId: string;
+        userEmail: string;
+        userName: string;
+        accessRole: 'owner' | 'member' | 'viewer';
+        grantedByUserId: string | null;
+        createdAt: string;
+      }[]
+    >(`/v1/agents/${agentId}/access`),
+
+  grantAgentAccess: (agentId: string, userId: string, accessRole: 'owner' | 'member' | 'viewer') =>
+    request<{ id: string }>(`/v1/agents/${agentId}/access/grant`, {
+      method: 'POST',
+      body: JSON.stringify({ userId, accessRole }),
+    }),
+
+  revokeAgentAccess: (agentId: string, userId: string) =>
+    request<void>(`/v1/agents/${agentId}/access/${userId}`, { method: 'DELETE' }),
 };

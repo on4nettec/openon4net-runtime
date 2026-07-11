@@ -16,7 +16,18 @@ interface Role {
 // call sites) plus the "*" wildcard per resource — kept in sync by hand
 // since permissions are free-form strings, not a DB-enumerated type.
 const PERMISSION_CATALOG: { resource: string; permissions: string[] }[] = [
-  { resource: 'agents', permissions: ['agents:create', 'agents:read', 'agents:update', 'agents:chat', 'agents:*'] },
+  {
+    resource: 'agents',
+    permissions: [
+      'agents:create',
+      'agents:read',
+      'agents:update',
+      'agents:chat',
+      'agents:access:grant',
+      'agents:access:revoke',
+      'agents:*',
+    ],
+  },
   { resource: 'memory', permissions: ['memory:read', 'memory:write', 'memory:*'] },
   { resource: 'audit', permissions: ['audit:read'] },
   { resource: 'approvals', permissions: ['approvals:read', 'approvals:approve', 'approvals:*'] },

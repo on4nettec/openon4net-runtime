@@ -3,6 +3,7 @@ import { MemorySearchSchema, MemoryWriteSchema } from '@o2n/shared';
 import { ValidationError } from '@o2n/governance';
 import type { AppContext } from '../context.js';
 import { requirePermission } from '../lib/require-permission.js';
+import { requireAgentAccessible } from '../lib/agent-access.js';
 import { AgentService } from '../services/agent-service.js';
 import { MemoryService } from '../services/memory-service.js';
 
@@ -19,6 +20,7 @@ export function registerMemoryRoutes(app: FastifyInstance, ctx: AppContext): voi
     // (agentService.getById() 404s otherwise) — mirrors the org check in chat.ts.
     const conversation = await memoryService.getConversationById(parsed.data.conversationId);
     await agentService.getById(request.auth.organizationId, conversation.agentId);
+    await requireAgentAccessible(ctx, request, conversation.agentId);
 
     return memoryService.appendMessage(conversation.id, {
       role: parsed.data.role,
@@ -41,6 +43,7 @@ export function registerMemoryRoutes(app: FastifyInstance, ctx: AppContext): voi
     }
     const conversation = await memoryService.getConversationById(parsed.data.conversationId);
     await agentService.getById(request.auth.organizationId, conversation.agentId);
+    await requireAgentAccessible(ctx, request, conversation.agentId);
 
     return ctx.embeddingService.enabled
       ? memoryService.searchMessagesSemantic(conversation.id, parsed.data.query, parsed.data.limit)

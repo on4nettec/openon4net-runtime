@@ -3,8 +3,20 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import type { Agent, Workspace } from '@o2n/shared';
+import type { Agent, User, Workspace } from '@o2n/shared';
 import { api, loadSession, clearSession, ApiError, type Session } from '@/lib/api-client';
+
+type AccessRole = 'owner' | 'member' | 'viewer';
+interface AgentAccessBinding {
+  id: string;
+  agentId: string;
+  userId: string;
+  userEmail: string;
+  userName: string;
+  accessRole: AccessRole;
+  grantedByUserId: string | null;
+  createdAt: string;
+}
 
 export default function AgentsPage() {
   const router = useRouter();
@@ -27,6 +39,14 @@ export default function AgentsPage() {
   const [schedulePrompt, setSchedulePrompt] = useState('');
   const [savingSchedule, setSavingSchedule] = useState(false);
   const [scheduleError, setScheduleError] = useState<string | null>(null);
+
+  const [accessOpenId, setAccessOpenId] = useState<string | null>(null);
+  const [accessBindings, setAccessBindings] = useState<AgentAccessBinding[]>([]);
+  const [orgUsers, setOrgUsers] = useState<User[]>([]);
+  const [selectedUserId, setSelectedUserId] = useState('');
+  const [selectedAccessRole, setSelectedAccessRole] = useState<AccessRole>('member');
+  const [savingAccess, setSavingAccess] = useState(false);
+  const [accessError, setAccessError] = useState<string | null>(null);
 
   useEffect(() => {
     const s = loadSession();
@@ -138,6 +158,49 @@ export default function AgentsPage() {
     }
   }
 
+  async function toggleAccess(agent: Agent) {
+    if (accessOpenId === agent.id) {
+      setAccessOpenId(null);
+      return;
+    }
+    setAccessError(null);
+    setAccessOpenId(agent.id);
+    try {
+      if (orgUsers.length === 0) setOrgUsers(await api.listUsers());
+      setAccessBindings(await api.listAgentAccess(agent.id));
+    } catch (err) {
+      setAccessError(err instanceof ApiError ? err.message : 'Failed to load access list');
+    }
+  }
+
+  async function handleGrantAccess(agentId: string) {
+    if (!selectedUserId) return;
+    setSavingAccess(true);
+    setAccessError(null);
+    try {
+      await api.grantAgentAccess(agentId, selectedUserId, selectedAccessRole);
+      setAccessBindings(await api.listAgentAccess(agentId));
+      setSelectedUserId('');
+    } catch (err) {
+      setAccessError(err instanceof ApiError ? err.message : 'Failed to grant access');
+    } finally {
+      setSavingAccess(false);
+    }
+  }
+
+  async function handleRevokeAccess(agentId: string, userId: string) {
+    setSavingAccess(true);
+    setAccessError(null);
+    try {
+      await api.revokeAgentAccess(agentId, userId);
+      setAccessBindings(await api.listAgentAccess(agentId));
+    } catch (err) {
+      setAccessError(err instanceof ApiError ? err.message : 'Failed to revoke access');
+    } finally {
+      setSavingAccess(false);
+    }
+  }
+
   async function handleTerminate(agentId: string, agentName: string) {
     if (!window.confirm(`Terminate "${agentName}"? This can't be undone from the UI.`)) return;
     setActioningId(agentId);
@@ -218,6 +281,7 @@ export default function AgentsPage() {
             {agents.map((agent) => {
               const busy = actioningId === agent.id;
               const scheduleOpen = scheduleOpenId === agent.id;
+              const accessOpen = accessOpenId === agent.id;
               const agentScheduleInfo = agent.schedule as { enabled?: boolean; intervalMinutes?: number };
               return (
                 <div key={agent.id} className="card">
@@ -237,6 +301,11 @@ export default function AgentsPage() {
                       <button className="secondary" onClick={() => toggleSchedule(agent)}>
                         {scheduleOpen ? 'Cancel' : 'Schedule'}
                       </button>
+                      {session.role === 'admin' ? (
+                        <button className="secondary" onClick={() => toggleAccess(agent)}>
+                          {accessOpen ? 'Cancel' : 'Access'}
+                        </button>
+                      ) : null}
                       {agent.status === 'active' ? (
                         <button className="secondary" disabled={busy} onClick={() => handlePause(agent.id)}>
                           Pause
@@ -288,6 +357,62 @@ export default function AgentsPage() {
                       >
                         {savingSchedule ? 'Saving…' : 'Save schedule'}
                       </button>
+                    </div>
+                  ) : null}
+
+                  {accessOpen ? (
+                    <div style={{ borderTop: '1px solid #2c3038', marginTop: 12, paddingTop: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                      {accessError ? <div className="error">{accessError}</div> : null}
+                      <div style={{ color: '#9aa0aa', fontSize: 12 }}>
+                        Who besides admins can see and use this agent:
+                      </div>
+                      {accessBindings.length === 0 ? (
+                        <div style={{ color: '#9aa0aa', fontSize: 13 }}>No one granted yet.</div>
+                      ) : (
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                          <tbody>
+                            {accessBindings.map((b) => (
+                              <tr key={b.id} style={{ borderTop: '1px solid #2c3038' }}>
+                                <td style={{ padding: '6px 0' }}>{b.userName}</td>
+                                <td style={{ padding: '6px 0', color: '#9aa0aa' }}>{b.userEmail}</td>
+                                <td style={{ padding: '6px 0', color: '#9aa0aa' }}>{b.accessRole}</td>
+                                <td style={{ padding: '6px 0' }}>
+                                  <button
+                                    className="secondary"
+                                    disabled={savingAccess}
+                                    onClick={() => handleRevokeAccess(agent.id, b.userId)}
+                                  >
+                                    Revoke
+                                  </button>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      )}
+                      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                        <select value={selectedUserId} onChange={(e) => setSelectedUserId(e.target.value)}>
+                          <option value="">Select a user…</option>
+                          {orgUsers
+                            .filter((u) => !accessBindings.some((b) => b.userId === u.id))
+                            .map((u) => (
+                              <option key={u.id} value={u.id}>
+                                {u.name} ({u.email})
+                              </option>
+                            ))}
+                        </select>
+                        <select
+                          value={selectedAccessRole}
+                          onChange={(e) => setSelectedAccessRole(e.target.value as AccessRole)}
+                        >
+                          <option value="viewer">viewer</option>
+                          <option value="member">member</option>
+                          <option value="owner">owner</option>
+                        </select>
+                        <button disabled={!selectedUserId || savingAccess} onClick={() => handleGrantAccess(agent.id)}>
+                          {savingAccess ? 'Saving…' : 'Grant'}
+                        </button>
+                      </div>
                     </div>
                   ) : null}
                 </div>
