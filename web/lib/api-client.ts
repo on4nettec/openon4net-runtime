@@ -91,6 +91,34 @@ export interface SkillProposal {
   createdAt: string;
 }
 
+export interface MarketplaceConfigField {
+  key: string;
+  label: string;
+  type: string;
+}
+
+export interface MarketplacePlugin {
+  pluginId: string;
+  packageName: string;
+  name: string;
+  description: string | null;
+  publisherSlug: string;
+  publisherVerified: boolean;
+  latestVersion: string | null;
+  manifest: { configSchema?: MarketplaceConfigField[] } | null;
+  createdAt: string;
+}
+
+export interface MarketplaceSkillListing {
+  skillId: string;
+  slug: string;
+  name: string;
+  description: string | null;
+  priceCents: number;
+  publisherSlug: string;
+  createdAt: string;
+}
+
 export class ApiError extends Error {
   constructor(
     public code: string,
@@ -414,4 +442,25 @@ export const api = {
 
   rejectSkillProposal: (id: string) =>
     request<{ status: string; proposalId: string }>(`/v1/skill-proposals/${id}/reject`, { method: 'POST' }),
+
+  listMarketplacePlugins: () => request<{ plugins: MarketplacePlugin[]; total: number }>('/v1/marketplace/plugins'),
+
+  listMarketplaceSkills: () => request<{ skills: MarketplaceSkillListing[]; total: number }>('/v1/marketplace/skills'),
+
+  installMarketplacePlugin: (pluginId: string) =>
+    request<{ installId: string; pluginId: string; version: string; isActive: boolean }>(
+      `/v1/marketplace/plugins/${pluginId}/install`,
+      { method: 'POST' },
+    ),
+
+  installMarketplaceSkill: (skillId: string) =>
+    request<{ install: { installId: string }; skill: Skill }>(`/v1/marketplace/skills/${skillId}/install`, {
+      method: 'POST',
+    }),
+
+  updateMarketplaceInstallConfig: (installId: string, config: Record<string, unknown>) =>
+    request<{ installId: string; config: Record<string, unknown> }>(
+      `/v1/marketplace/installs/${installId}/config`,
+      { method: 'PATCH', body: JSON.stringify({ config }) },
+    ),
 };

@@ -62,6 +62,18 @@ const EnvSchema = z
     // search silently falls back to the plain ILIKE search it always had.
     EMBEDDING_MODEL: z.string().min(1).optional(),
 
+    // --- T-CP-007: Control Plane activation client (optional — pure
+    // self-host deployments leave both unset, and ActivationState.isActivated()
+    // defaults to true in that case; self-host-first is this project's MVP
+    // target, so an unconfigured Runtime must never read as "unactivated"). ---
+    CONTROL_PLANE_URL: z.string().url().optional(),
+    ACTIVATION_KEY: z.string().min(1).optional(),
+
+    // --- Marketplace install-proxy (optional — unset disables /v1/marketplace/*
+    // with a clear 501, same "off by default" contract as the two above). ---
+    MARKETPLACE_SERVICE_URL: z.string().url().optional(),
+    MARKETPLACE_API_KEY: z.string().min(1).optional(),
+
     // --- RT-014..018: Auth Method Registry (docs/spect/02_ARCHITECTURE/16-authentication-modes.md) ---
 
     // Node convention, not auth-specific, but the dev_api_key hardening

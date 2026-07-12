@@ -9,6 +9,8 @@ import { EmbeddingService } from './services/embedding-service.js';
 import { PolicyService } from './services/policy-service.js';
 import { startScheduler } from './services/scheduler.js';
 import { startSkillProposalScheduler } from './services/skill-proposal-scheduler.js';
+import { ActivationState } from './services/activation-state.js';
+import { startActivationScheduler } from './services/activation-scheduler.js';
 import type { AppContext } from './context.js';
 
 async function main(): Promise<void> {
@@ -32,11 +34,13 @@ async function main(): Promise<void> {
     permissionService: new PermissionService(db),
     embeddingService: new EmbeddingService(env),
     policyService: new PolicyService(db),
+    activationState: new ActivationState(env),
   };
 
   const app = await buildApp(ctx);
   startScheduler(ctx);
   startSkillProposalScheduler(ctx);
+  startActivationScheduler(ctx);
 
   await app.listen({ port: env.PORT, host: '0.0.0.0' });
 }

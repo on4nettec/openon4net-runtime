@@ -18,7 +18,10 @@ export function registerSkillRoutes(app: FastifyInstance, ctx: AppContext): void
     requirePermission(request, 'skills:create');
     const parsed = SkillCreateSchema.safeParse(request.body);
     if (!parsed.success) throw new ValidationError('Invalid skill payload', parsed.error.flatten());
-    await requireAgentAccessible(ctx, request, parsed.data.agentId);
+    // No agentId → an ownerless org-level artifact (e.g. a Marketplace
+    // install, granted to specific agents afterward) — nothing agent-scoped
+    // to check yet.
+    if (parsed.data.agentId) await requireAgentAccessible(ctx, request, parsed.data.agentId);
 
     return withTransaction(ctx.db, async (client) => {
       const skill = await new SkillService(client).create(request.auth.organizationId, parsed.data, 'manual');

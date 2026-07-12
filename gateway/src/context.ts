@@ -5,6 +5,7 @@ import type { ProviderConfigService } from './services/provider-config-service.j
 import type { PermissionService } from './services/permission-service.js';
 import type { EmbeddingService } from './services/embedding-service.js';
 import type { PolicyService } from './services/policy-service.js';
+import type { ActivationState } from './services/activation-state.js';
 
 export interface AppContext {
   env: Env;
@@ -14,4 +15,5 @@ export interface AppContext {
   permissionService: PermissionService;
   embeddingService: EmbeddingService;
   policyService: PolicyService;
+  activationState: ActivationState;
 }

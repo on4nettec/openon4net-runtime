@@ -20,6 +20,7 @@ import { registerWorkspaceRoutes } from './routes/workspaces.js';
 import { registerPolicyRoutes } from './routes/policies.js';
 import { registerSkillRoutes } from './routes/skills.js';
 import { registerSkillProposalRoutes } from './routes/skill-proposals.js';
+import { registerMarketplaceRoutes } from './routes/marketplace.js';
 
 export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
   const app = Fastify({ logger: true });
@@ -51,6 +52,7 @@ export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
   registerPolicyRoutes(app, ctx);
   registerSkillRoutes(app, ctx);
   registerSkillProposalRoutes(app, ctx);
+  registerMarketplaceRoutes(app, ctx);
 
   return app;
 }

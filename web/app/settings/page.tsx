@@ -109,6 +109,7 @@ export default function SettingsPage() {
           <Link href="/audit">Audit Log</Link>
           <Link href="/skills">Skills</Link>
           <Link href="/skill-proposals">Skill Proposals</Link>
+          <Link href="/marketplace">Marketplace</Link>
           {isAdmin ? <Link href="/workspaces">Workspaces</Link> : null}
           {isAdmin ? <Link href="/users">Users</Link> : null}
           {isAdmin ? <Link href="/roles">Roles & Permissions</Link> : null}

@@ -157,6 +157,7 @@ export default function SkillsPage() {
           <Link href="/audit">Audit Log</Link>
           <strong>Skills</strong>
           <Link href="/skill-proposals">Skill Proposals</Link>
+          <Link href="/marketplace">Marketplace</Link>
           <Link href="/policies">Policies</Link>
           <Link href="/settings">Settings</Link>
         </nav>

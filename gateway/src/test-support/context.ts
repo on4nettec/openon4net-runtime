@@ -5,6 +5,7 @@ import { ProviderConfigService } from '../services/provider-config-service.js';
 import { PermissionService } from '../services/permission-service.js';
 import { EmbeddingService } from '../services/embedding-service.js';
 import { PolicyService } from '../services/policy-service.js';
+import { ActivationState } from '../services/activation-state.js';
 import { createTestDb } from './db.js';
 import { createTestEnv } from './env.js';
 
@@ -20,5 +21,6 @@ export function createTestContext(envOverrides: Partial<Env> = {}): AppContext {
     permissionService: new PermissionService(db),
     embeddingService: new EmbeddingService(env),
     policyService: new PolicyService(db),
+    activationState: new ActivationState(env),
   };
 }

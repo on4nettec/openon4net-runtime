@@ -42,6 +42,7 @@ const PERMISSION_CATALOG: { resource: string; permissions: string[] }[] = [
     permissions: ['skills:create', 'skills:read', 'skills:update', 'skills:delete', 'skills:grant', 'skills:execute', 'skills:*'],
   },
   { resource: 'skill-proposals', permissions: ['skill-proposals:read', 'skill-proposals:approve'] },
+  { resource: 'marketplace', permissions: ['marketplace:read', 'marketplace:install', 'marketplace:*'] },
 ];
 
 export default function RolesPage() {
@@ -144,6 +145,7 @@ export default function RolesPage() {
           <Link href="/users">Users</Link>
           <Link href="/skills">Skills</Link>
           <Link href="/skill-proposals">Skill Proposals</Link>
+          <Link href="/marketplace">Marketplace</Link>
           <Link href="/policies">Policies</Link>
           <Link href="/audit">Audit Log</Link>
           <Link href="/settings">Settings</Link>

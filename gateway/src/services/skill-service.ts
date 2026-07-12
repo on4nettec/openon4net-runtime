@@ -7,7 +7,7 @@ export type SkillStatus = 'active' | 'inactive' | 'deprecated';
 
 export interface Skill {
   readonly id: string;
-  agentId: string;
+  agentId: string | null;
   organizationId: string;
   name: string;
   description: string | null;
@@ -24,7 +24,7 @@ export interface Skill {
 
 interface SkillRow {
   id: string;
-  agent_id: string;
+  agent_id: string | null;
   organization_id: string;
   name: string;
   description: string | null;
@@ -67,7 +67,7 @@ export class SkillService {
       `INSERT INTO skills (agent_id, organization_id, name, description, definition, source)
        VALUES ($1, $2, $3, $4, $5, $6)
        RETURNING *`,
-      [input.agentId, organizationId, input.name, input.description ?? null, JSON.stringify(input.definition), source],
+      [input.agentId ?? null, organizationId, input.name, input.description ?? null, JSON.stringify(input.definition), source],
     );
     const row = rows[0];
     if (!row) throw new Error('Insert did not return a row');

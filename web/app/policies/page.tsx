@@ -114,6 +114,7 @@ export default function PoliciesPage() {
           <Link href="/roles">Roles & Permissions</Link>
           <Link href="/skills">Skills</Link>
           <Link href="/skill-proposals">Skill Proposals</Link>
+          <Link href="/marketplace">Marketplace</Link>
           <Link href="/audit">Audit Log</Link>
           <Link href="/settings">Settings</Link>
         </nav>
