@@ -43,6 +43,54 @@ export function clearSession(): void {
   localStorage.removeItem(SESSION_KEY);
 }
 
+export interface SkillStep {
+  id: string;
+  type: 'tool';
+  tool: 'telegram-send' | 'webhook-send';
+  params: Record<string, unknown>;
+}
+
+export interface SkillDefinition {
+  trigger: { type: 'manual' };
+  steps: SkillStep[];
+}
+
+export interface Skill {
+  id: string;
+  agentId: string;
+  organizationId: string;
+  name: string;
+  description: string | null;
+  version: string;
+  definition: SkillDefinition;
+  source: 'auto' | 'manual' | 'marketplace';
+  status: 'active' | 'inactive' | 'deprecated';
+  executionCount: number;
+  successRate: number;
+  avgDurationMs: number | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SkillGrant {
+  id: string;
+  agentId: string;
+  skillId: string;
+  grantedByUserId: string | null;
+  createdAt: string;
+}
+
+export interface SkillProposal {
+  id: string;
+  agentId: string;
+  organizationId: string;
+  proposedDefinition: SkillDefinition;
+  patternMetadata: Record<string, unknown>;
+  status: 'pending' | 'approved' | 'rejected';
+  reviewedByUserId: string | null;
+  createdAt: string;
+}
+
 export class ApiError extends Error {
   constructor(
     public code: string,
@@ -338,4 +386,32 @@ export const api = {
 
   revokeAgentAccess: (agentId: string, userId: string) =>
     request<void>(`/v1/agents/${agentId}/access/${userId}`, { method: 'DELETE' }),
+
+  listSkills: () => request<Skill[]>('/v1/skills'),
+
+  createSkill: (input: { agentId: string; name: string; description?: string; definition: SkillDefinition }) =>
+    request<Skill>('/v1/skills', { method: 'POST', body: JSON.stringify(input) }),
+
+  deleteSkill: (id: string) => request<void>(`/v1/skills/${id}`, { method: 'DELETE' }),
+
+  listAgentSkillGrants: (agentId: string) => request<SkillGrant[]>(`/v1/agents/${agentId}/skills`),
+
+  grantSkill: (agentId: string, skillId: string) =>
+    request<SkillGrant>(`/v1/agents/${agentId}/skills/${skillId}/grant`, { method: 'POST' }),
+
+  revokeSkill: (agentId: string, skillId: string) =>
+    request<void>(`/v1/agents/${agentId}/skills/${skillId}/grant`, { method: 'DELETE' }),
+
+  executeSkill: (agentId: string, skillId: string, params: Record<string, unknown> = {}) =>
+    request<{ skillId: string; succeeded: boolean; durationMs: number; stepResults: unknown[] }>(
+      `/v1/agents/${agentId}/skills/${skillId}/execute`,
+      { method: 'POST', body: JSON.stringify({ params }) },
+    ),
+
+  listSkillProposals: () => request<SkillProposal[]>('/v1/skill-proposals'),
+
+  approveSkillProposal: (id: string) => request<Skill>(`/v1/skill-proposals/${id}/approve`, { method: 'POST' }),
+
+  rejectSkillProposal: (id: string) =>
+    request<{ status: string; proposalId: string }>(`/v1/skill-proposals/${id}/reject`, { method: 'POST' }),
 };

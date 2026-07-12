@@ -18,6 +18,8 @@ import { registerUserRoutes } from './routes/users.js';
 import { registerAuditRoutes } from './routes/audit.js';
 import { registerWorkspaceRoutes } from './routes/workspaces.js';
 import { registerPolicyRoutes } from './routes/policies.js';
+import { registerSkillRoutes } from './routes/skills.js';
+import { registerSkillProposalRoutes } from './routes/skill-proposals.js';
 
 export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
   const app = Fastify({ logger: true });
@@ -47,6 +49,8 @@ export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
   registerAuditRoutes(app, ctx);
   registerWorkspaceRoutes(app, ctx);
   registerPolicyRoutes(app, ctx);
+  registerSkillRoutes(app, ctx);
+  registerSkillProposalRoutes(app, ctx);
 
   return app;
 }

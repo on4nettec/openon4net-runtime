@@ -223,6 +223,8 @@ export default function AgentsPage() {
         <strong>{session.organizationName}</strong>
         <nav>
           <Link href="/agents">Agents</Link>
+          <Link href="/skills">Skills</Link>
+          <Link href="/skill-proposals">Skill Proposals</Link>
           <Link href="/settings">Settings</Link>
           <button className="secondary" onClick={handleLogout}>
             Sign out

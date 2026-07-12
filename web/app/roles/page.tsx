@@ -37,6 +37,11 @@ const PERMISSION_CATALOG: { resource: string; permissions: string[] }[] = [
   { resource: 'roles', permissions: ['roles:read', 'roles:write'] },
   { resource: 'users', permissions: ['users:read', 'users:write'] },
   { resource: 'workspaces', permissions: ['workspaces:read', 'workspaces:write'] },
+  {
+    resource: 'skills',
+    permissions: ['skills:create', 'skills:read', 'skills:update', 'skills:delete', 'skills:grant', 'skills:execute', 'skills:*'],
+  },
+  { resource: 'skill-proposals', permissions: ['skill-proposals:read', 'skill-proposals:approve'] },
 ];
 
 export default function RolesPage() {
@@ -137,6 +142,8 @@ export default function RolesPage() {
           <strong>Roles & Permissions</strong>
           <Link href="/workspaces">Workspaces</Link>
           <Link href="/users">Users</Link>
+          <Link href="/skills">Skills</Link>
+          <Link href="/skill-proposals">Skill Proposals</Link>
           <Link href="/policies">Policies</Link>
           <Link href="/audit">Audit Log</Link>
           <Link href="/settings">Settings</Link>
