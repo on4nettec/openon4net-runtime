@@ -11,6 +11,7 @@ import { startScheduler } from './services/scheduler.js';
 import { startSkillProposalScheduler } from './services/skill-proposal-scheduler.js';
 import { ActivationState } from './services/activation-state.js';
 import { startActivationScheduler } from './services/activation-scheduler.js';
+import { startApprovalExpiryScheduler } from './services/approval-expiry-scheduler.js';
 import type { AppContext } from './context.js';
 
 async function main(): Promise<void> {
@@ -41,6 +42,7 @@ async function main(): Promise<void> {
   startScheduler(ctx);
   startSkillProposalScheduler(ctx);
   startActivationScheduler(ctx);
+  startApprovalExpiryScheduler(ctx);
 
   await app.listen({ port: env.PORT, host: '0.0.0.0' });
 }

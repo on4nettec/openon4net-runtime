@@ -4,6 +4,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { api, loadSession, ApiError } from '@/lib/api-client';
+import type { Organization } from '@o2n/shared';
 
 interface Config {
   provider: string;
@@ -32,6 +33,19 @@ export default function SettingsPage() {
   const [testResult, setTestResult] = useState<TestResult | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
 
+  const [organization, setOrganization] = useState<Organization | null>(null);
+  const [orgError, setOrgError] = useState<string | null>(null);
+  const [editingOrg, setEditingOrg] = useState(false);
+  const [orgName, setOrgName] = useState('');
+  const [savingOrg, setSavingOrg] = useState(false);
+  const [orgSaveError, setOrgSaveError] = useState<string | null>(null);
+
+  const [wallet, setWallet] = useState<{ balanceCredits: number; initialized?: boolean } | null>(null);
+  const [walletError, setWalletError] = useState<string | null>(null);
+  const [topUpAmount, setTopUpAmount] = useState('');
+  const [toppingUp, setToppingUp] = useState(false);
+  const [topUpError, setTopUpError] = useState<string | null>(null);
+
   const [editing, setEditing] = useState(false);
   const [provider, setProvider] = useState<(typeof PROVIDERS)[number]>('anthropic');
   const [model, setModel] = useState('');
@@ -52,14 +66,36 @@ export default function SettingsPage() {
       .catch((err) => setError(err instanceof ApiError ? err.message : 'Failed to load settings'));
   }
 
+  function loadOrganization() {
+    return api
+      .getOrganization()
+      .then((org) => {
+        setOrganization(org);
+        setOrgName(org.name);
+      })
+      .catch((err) => setOrgError(err instanceof ApiError ? err.message : 'Failed to load organization'));
+  }
+
+  function loadWallet() {
+    return api
+      .getWallet()
+      .then(setWallet)
+      .catch((err) => setWalletError(err instanceof ApiError ? err.message : 'Failed to load wallet'));
+  }
+
   useEffect(() => {
     const session = loadSession();
     if (!session) {
       router.push('/login');
       return;
     }
-    setIsAdmin(session.role === 'admin');
+    const admin = session.role === 'admin';
+    setIsAdmin(admin);
     loadConfig();
+    if (admin) {
+      loadOrganization();
+      loadWallet();
+    }
   }, [router]);
 
   async function handleTestConnection() {
@@ -75,6 +111,36 @@ export default function SettingsPage() {
       });
     } finally {
       setTesting(false);
+    }
+  }
+
+  async function handleSaveOrg(e: FormEvent) {
+    e.preventDefault();
+    setSavingOrg(true);
+    setOrgSaveError(null);
+    try {
+      await api.updateOrganization({ name: orgName });
+      setEditingOrg(false);
+      await loadOrganization();
+    } catch (err) {
+      setOrgSaveError(err instanceof ApiError ? err.message : 'Failed to save organization');
+    } finally {
+      setSavingOrg(false);
+    }
+  }
+
+  async function handleTopUp(e: FormEvent) {
+    e.preventDefault();
+    setToppingUp(true);
+    setTopUpError(null);
+    try {
+      await api.creditWallet({ amountCredits: Number(topUpAmount), reason: 'Manual top-up via settings' });
+      setTopUpAmount('');
+      await loadWallet();
+    } catch (err) {
+      setTopUpError(err instanceof ApiError ? err.message : 'Failed to top up wallet');
+    } finally {
+      setToppingUp(false);
     }
   }
 
@@ -110,6 +176,7 @@ export default function SettingsPage() {
           <Link href="/skills">Skills</Link>
           <Link href="/skill-proposals">Skill Proposals</Link>
           <Link href="/marketplace">Marketplace</Link>
+          <Link href="/approvals">Approvals</Link>
           {isAdmin ? <Link href="/workspaces">Workspaces</Link> : null}
           {isAdmin ? <Link href="/users">Users</Link> : null}
           {isAdmin ? <Link href="/roles">Roles & Permissions</Link> : null}
@@ -118,6 +185,80 @@ export default function SettingsPage() {
       </div>
 
       <div className="page">
+        {isAdmin ? (
+          <>
+            <h1 style={{ fontSize: 20 }}>Organization</h1>
+            {orgError ? <div className="error">{orgError}</div> : null}
+            {organization ? (
+              <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 24 }}>
+                <Row label="Name" value={organization.name} />
+                <Row label="Slug" value={organization.slug} />
+                <Row label="Plan" value={organization.plan} />
+                <Row label="Status" value={organization.status} />
+
+                <div style={{ borderTop: '1px solid #2c3038', paddingTop: 14, marginTop: 4 }}>
+                  <button type="button" onClick={() => setEditingOrg((v) => !v)}>
+                    {editingOrg ? 'Cancel' : 'Edit name'}
+                  </button>
+                </div>
+
+                {editingOrg ? (
+                  <form
+                    onSubmit={handleSaveOrg}
+                    style={{ borderTop: '1px solid #2c3038', paddingTop: 14, marginTop: 4, display: 'flex', flexDirection: 'column', gap: 10 }}
+                  >
+                    {orgSaveError ? <div className="error">{orgSaveError}</div> : null}
+                    <label>
+                      Name
+                      <input value={orgName} onChange={(e) => setOrgName(e.target.value)} required />
+                    </label>
+                    <button type="submit" disabled={savingOrg}>
+                      {savingOrg ? 'Saving…' : 'Save'}
+                    </button>
+                  </form>
+                ) : null}
+              </div>
+            ) : !orgError ? (
+              <p>Loading…</p>
+            ) : null}
+
+            <h2 style={{ fontSize: 16, marginTop: 24 }}>Wallet</h2>
+            <p style={{ color: '#9aa0aa', fontSize: 13, marginTop: 0 }}>
+              Optional org-level spending cap. Uninitialized (never topped up) means no cap — chats are only
+              gated by each agent&apos;s own monthly budget.
+            </p>
+            {walletError ? <div className="error">{walletError}</div> : null}
+            {wallet ? (
+              <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 24 }}>
+                <Row
+                  label="Balance"
+                  value={wallet.initialized === false ? 'Not initialized (no cap)' : `${wallet.balanceCredits} credits`}
+                />
+                <form
+                  onSubmit={handleTopUp}
+                  style={{ borderTop: '1px solid #2c3038', paddingTop: 14, marginTop: 4, display: 'flex', gap: 10, alignItems: 'flex-end' }}
+                >
+                  {topUpError ? <div className="error">{topUpError}</div> : null}
+                  <label style={{ flex: 1 }}>
+                    Add credits
+                    <input
+                      type="number"
+                      min="1"
+                      step="1"
+                      value={topUpAmount}
+                      onChange={(e) => setTopUpAmount(e.target.value)}
+                      required
+                    />
+                  </label>
+                  <button type="submit" disabled={toppingUp}>
+                    {toppingUp ? 'Adding…' : 'Top up'}
+                  </button>
+                </form>
+              </div>
+            ) : null}
+          </>
+        ) : null}
+
         <h1 style={{ fontSize: 20 }}>AI Provider</h1>
         <p style={{ color: '#9aa0aa', fontSize: 14 }}>
           {config?.source === 'database'

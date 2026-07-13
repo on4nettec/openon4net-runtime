@@ -1,6 +1,7 @@
 import type { User, UserCreateInput, UserUpdateInput } from '@o2n/shared';
 import { NotFoundError, ValidationError } from '@o2n/governance';
 import { withTransaction, type Db } from '../db.js';
+import { resolveRoleId, resolveWorkspaceId } from './role-workspace-resolver.js';
 
 interface UserRow {
   id: string;
@@ -104,7 +105,7 @@ export class UserService {
     return row ? toUser(row) : null;
   }
 
-  /** Creates a user and binds them to the seeded role matching input.role, in the org's (first) workspace. */
+  /** Creates a user and binds them to the role/workspace named in input (workspace defaults to the org's first active one). */
   async create(organizationId: string, input: UserCreateInput): Promise<User> {
     return withTransaction(this.db, async (client) => {
       const { rows: existing } = await client.query<{ id: string }>(
@@ -113,19 +114,8 @@ export class UserService {
       );
       if (existing[0]) throw new ValidationError(`A user with email ${input.email} already exists in this organization`);
 
-      const { rows: roleRows } = await client.query<{ id: string }>(
-        `SELECT id FROM roles WHERE organization_id = $1 AND name = $2`,
-        [organizationId, input.role],
-      );
-      const roleId = roleRows[0]?.id;
-      if (!roleId) throw new NotFoundError('Role', input.role);
-
-      const { rows: wsRows } = await client.query<{ id: string }>(
-        `SELECT id FROM workspaces WHERE organization_id = $1 ORDER BY created_at LIMIT 1`,
-        [organizationId],
-      );
-      const workspaceId = wsRows[0]?.id;
-      if (!workspaceId) throw new Error(`Organization ${organizationId} has no workspace`);
+      const roleId = await resolveRoleId(client, organizationId, input.role);
+      const workspaceId = await resolveWorkspaceId(client, organizationId, input.workspaceId);
 
       const { rows: userRows } = await client.query<UserRow>(
         `INSERT INTO users (email, name, role, organization_id) VALUES ($1, $2, $3, $4) RETURNING *`,
@@ -145,12 +135,15 @@ export class UserService {
   }
 
   /**
-   * role change re-syncs user_role_bindings too (delete existing, insert one
-   * for the new role) — the current model is one active role per user, same
-   * as create(). isActive just flips the column; a deactivated user is
-   * rejected at login (see services/org-service.ts) but keeps their audit
-   * history and conversations (no cascade, no physical delete — mirrors
-   * agents' soft-delete via status, see routes/agents.ts).
+   * role/workspaceId change re-syncs user_role_bindings too (delete
+   * existing, insert one for the new role/workspace) — the current model is
+   * one active role per user, same as create(). Either field alone is
+   * enough to trigger a rebind (e.g. moving a user to a different workspace
+   * without changing their role keeps their current role name). isActive
+   * just flips the column; a deactivated user is rejected at login (see
+   * services/org-service.ts) but keeps their audit history and
+   * conversations (no cascade, no physical delete — mirrors agents'
+   * soft-delete via status, see routes/agents.ts).
    */
   async update(organizationId: string, userId: string, input: UserUpdateInput): Promise<User> {
     return withTransaction(this.db, async (client) => {
@@ -158,24 +151,15 @@ export class UserService {
         `SELECT * FROM users WHERE id = $1 AND organization_id = $2`,
         [userId, organizationId],
       );
-      if (!existingRows[0]) throw new NotFoundError('User', userId);
+      const existing = existingRows[0];
+      if (!existing) throw new NotFoundError('User', userId);
 
-      if (input.role !== undefined) {
-        const { rows: roleRows } = await client.query<{ id: string }>(
-          `SELECT id FROM roles WHERE organization_id = $1 AND name = $2`,
-          [organizationId, input.role],
-        );
-        const roleId = roleRows[0]?.id;
-        if (!roleId) throw new NotFoundError('Role', input.role);
+      if (input.role !== undefined || input.workspaceId !== undefined) {
+        const roleName = input.role ?? existing.role;
+        const roleId = await resolveRoleId(client, organizationId, roleName);
+        const workspaceId = await resolveWorkspaceId(client, organizationId, input.workspaceId);
 
-        const { rows: wsRows } = await client.query<{ id: string }>(
-          `SELECT id FROM workspaces WHERE organization_id = $1 ORDER BY created_at LIMIT 1`,
-          [organizationId],
-        );
-        const workspaceId = wsRows[0]?.id;
-        if (!workspaceId) throw new Error(`Organization ${organizationId} has no workspace`);
-
-        await client.query(`UPDATE users SET role = $1 WHERE id = $2`, [input.role, userId]);
+        await client.query(`UPDATE users SET role = $1 WHERE id = $2`, [roleName, userId]);
         await client.query(`DELETE FROM user_role_bindings WHERE user_id = $1`, [userId]);
         await client.query(`INSERT INTO user_role_bindings (user_id, role_id, workspace_id) VALUES ($1, $2, $3)`, [
           userId,

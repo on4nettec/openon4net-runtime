@@ -28,8 +28,37 @@ function toEntry(row: ApprovalRow): ApprovalQueueEntry {
   };
 }
 
+export interface ApprovalCreateInput {
+  agentId?: string | undefined;
+  actionData: Record<string, unknown>;
+  reason?: string | undefined;
+  /** Omitted = never auto-expires; the expiry sweep (services/approval-expiry-scheduler.ts) only touches rows that have one set. */
+  expiresAt?: Date | undefined;
+}
+
 export class ApprovalService {
   constructor(private db: Queryable) {}
+
+  /** Generic entry point — any subsystem can queue an approval, not just ChatService's cost/policy gate. */
+  async create(organizationId: string, input: ApprovalCreateInput): Promise<ApprovalQueueEntry> {
+    const { rows } = await this.db.query<ApprovalRow>(
+      `INSERT INTO approval_queue (organization_id, agent_id, action_data, reason, expires_at)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING *`,
+      [organizationId, input.agentId ?? null, JSON.stringify(input.actionData), input.reason ?? null, input.expiresAt ?? null],
+    );
+    const row = rows[0];
+    if (!row) throw new Error('Insert did not return a row');
+    return toEntry(row);
+  }
+
+  /** Bulk-expires anything still pending past its expires_at — see services/approval-expiry-scheduler.ts. Returns how many rows were touched. */
+  async expireStale(): Promise<number> {
+    const { rowCount } = await this.db.query(
+      `UPDATE approval_queue SET status = 'expired' WHERE status = 'pending' AND expires_at IS NOT NULL AND expires_at < NOW()`,
+    );
+    return rowCount ?? 0;
+  }
 
   async listPending(organizationId: string): Promise<ApprovalQueueEntry[]> {
     const { rows } = await this.db.query<ApprovalRow>(

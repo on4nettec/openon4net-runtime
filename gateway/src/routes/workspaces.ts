@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { WorkspaceCreateSchema } from '@o2n/shared';
+import { WorkspaceCreateSchema, WorkspaceUpdateSchema } from '@o2n/shared';
 import { ValidationError } from '@o2n/governance';
 import type { AppContext } from '../context.js';
 import { requirePermission } from '../lib/require-permission.js';
@@ -10,7 +10,8 @@ export function registerWorkspaceRoutes(app: FastifyInstance, ctx: AppContext): 
 
   app.get('/v1/workspaces', async (request) => {
     requirePermission(request, 'workspaces:read');
-    return workspaceService.list(request.auth.organizationId);
+    const query = request.query as { includeArchived?: string };
+    return workspaceService.list(request.auth.organizationId, { includeArchived: query.includeArchived === 'true' });
   });
 
   app.post('/v1/workspaces', async (request) => {
@@ -19,5 +20,18 @@ export function registerWorkspaceRoutes(app: FastifyInstance, ctx: AppContext): 
     if (!parsed.success) throw new ValidationError('Invalid workspace payload', parsed.error.flatten());
 
     return workspaceService.create(request.auth.organizationId, parsed.data);
+  });
+
+  app.patch<{ Params: { id: string } }>('/v1/workspaces/:id', async (request) => {
+    requirePermission(request, 'workspaces:write');
+    const parsed = WorkspaceUpdateSchema.safeParse(request.body);
+    if (!parsed.success) throw new ValidationError('Invalid workspace payload', parsed.error.flatten());
+
+    return workspaceService.update(request.auth.organizationId, request.params.id, parsed.data);
+  });
+
+  app.post<{ Params: { id: string } }>('/v1/workspaces/:id/archive', async (request) => {
+    requirePermission(request, 'workspaces:write');
+    return workspaceService.archive(request.auth.organizationId, request.params.id);
   });
 }

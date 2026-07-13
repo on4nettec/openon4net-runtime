@@ -3,30 +3,52 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import type { User, UserRole } from '@o2n/shared';
-import { api, loadSession, ApiError } from '@/lib/api-client';
+import type { User, Workspace } from '@o2n/shared';
+import { api, loadSession, ApiError, type Invitation } from '@/lib/api-client';
 
-const ROLES: UserRole[] = ['admin', 'manager', 'editor', 'viewer'];
+interface RoleOption {
+  id: string;
+  name: string;
+  isSystem: boolean;
+}
 
 export default function UsersPage() {
   const router = useRouter();
   const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [users, setUsers] = useState<User[]>([]);
+  const [roles, setRoles] = useState<RoleOption[]>([]);
+  const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
 
   const [email, setEmail] = useState('');
   const [name, setName] = useState('');
-  const [role, setRole] = useState<UserRole>('editor');
+  const [role, setRole] = useState('');
+  const [workspaceId, setWorkspaceId] = useState('');
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
+
+  const [invitations, setInvitations] = useState<Invitation[]>([]);
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [inviteRole, setInviteRole] = useState('');
+  const [inviteWorkspaceId, setInviteWorkspaceId] = useState('');
+  const [inviting, setInviting] = useState(false);
+  const [inviteError, setInviteError] = useState<string | null>(null);
+  const [revokingId, setRevokingId] = useState<string | null>(null);
 
   function loadUsers() {
     return api
       .listUsers()
       .then(setUsers)
       .catch((err) => setError(err instanceof ApiError ? err.message : 'Failed to load users'));
+  }
+
+  function loadInvitations() {
+    return api
+      .listInvitations()
+      .then(setInvitations)
+      .catch((err) => setError(err instanceof ApiError ? err.message : 'Failed to load invitations'));
   }
 
   useEffect(() => {
@@ -38,7 +60,24 @@ export default function UsersPage() {
     const admin = session.role === 'admin';
     setIsAdmin(admin);
     setCurrentUserId(session.userId);
-    if (admin) loadUsers();
+    if (admin) {
+      loadUsers();
+      loadInvitations();
+      api
+        .getRoles()
+        .then((list) => {
+          setRoles(list);
+          if (list[0]) {
+            setRole(list[0].name);
+            setInviteRole(list[0].name);
+          }
+        })
+        .catch((err) => setError(err instanceof ApiError ? err.message : 'Failed to load roles'));
+      api
+        .listWorkspaces()
+        .then(setWorkspaces)
+        .catch((err) => setError(err instanceof ApiError ? err.message : 'Failed to load workspaces'));
+    }
   }, [router]);
 
   async function handleCreate(e: FormEvent) {
@@ -46,10 +85,9 @@ export default function UsersPage() {
     setCreating(true);
     setCreateError(null);
     try {
-      await api.createUser({ email, name, role });
+      await api.createUser({ email, name, role, workspaceId: workspaceId || undefined });
       setEmail('');
       setName('');
-      setRole('editor');
       await loadUsers();
     } catch (err) {
       setCreateError(err instanceof ApiError ? err.message : 'Failed to create user');
@@ -58,7 +96,35 @@ export default function UsersPage() {
     }
   }
 
-  async function handleRoleChange(userId: string, newRole: UserRole) {
+  async function handleInvite(e: FormEvent) {
+    e.preventDefault();
+    setInviting(true);
+    setInviteError(null);
+    try {
+      await api.createInvitation({ email: inviteEmail, role: inviteRole, workspaceId: inviteWorkspaceId || undefined });
+      setInviteEmail('');
+      await loadInvitations();
+    } catch (err) {
+      setInviteError(err instanceof ApiError ? err.message : 'Failed to send invitation');
+    } finally {
+      setInviting(false);
+    }
+  }
+
+  async function handleRevokeInvitation(invitation: Invitation) {
+    setRevokingId(invitation.id);
+    setError(null);
+    try {
+      await api.revokeInvitation(invitation.id);
+      await loadInvitations();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Failed to revoke invitation');
+    } finally {
+      setRevokingId(null);
+    }
+  }
+
+  async function handleRoleChange(userId: string, newRole: string) {
     setUpdatingId(userId);
     setError(null);
     try {
@@ -103,6 +169,7 @@ export default function UsersPage() {
           <Link href="/skills">Skills</Link>
           <Link href="/skill-proposals">Skill Proposals</Link>
           <Link href="/marketplace">Marketplace</Link>
+          <Link href="/approvals">Approvals</Link>
           <Link href="/policies">Policies</Link>
           <Link href="/audit">Audit Log</Link>
           <Link href="/settings">Settings</Link>
@@ -153,11 +220,11 @@ export default function UsersPage() {
                             <select
                               value={u.role}
                               disabled={busy}
-                              onChange={(e) => handleRoleChange(u.id, e.target.value as UserRole)}
+                              onChange={(e) => handleRoleChange(u.id, e.target.value)}
                             >
-                              {ROLES.map((r) => (
-                                <option key={r} value={r}>
-                                  {r}
+                              {roles.map((r) => (
+                                <option key={r.id} value={r.name}>
+                                  {r.name}
                                 </option>
                               ))}
                             </select>
@@ -196,16 +263,101 @@ export default function UsersPage() {
                 </label>
                 <label>
                   Role
-                  <select value={role} onChange={(e) => setRole(e.target.value as UserRole)}>
-                    {ROLES.map((r) => (
-                      <option key={r} value={r}>
-                        {r}
+                  <select value={role} onChange={(e) => setRole(e.target.value)}>
+                    {roles.map((r) => (
+                      <option key={r.id} value={r.name}>
+                        {r.name}
                       </option>
                     ))}
                   </select>
                 </label>
+                {workspaces.length > 1 ? (
+                  <label>
+                    Workspace
+                    <select value={workspaceId} onChange={(e) => setWorkspaceId(e.target.value)}>
+                      <option value="">Default (org&apos;s first workspace)</option>
+                      {workspaces.map((w) => (
+                        <option key={w.id} value={w.id}>
+                          {w.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ) : null}
                 <button type="submit" disabled={creating}>
                   {creating ? 'Adding…' : 'Add user'}
+                </button>
+              </form>
+            </div>
+
+            <div className="card" style={{ marginTop: 16 }}>
+              <h2 style={{ fontSize: 16, marginTop: 0 }}>Invite by email</h2>
+              <p style={{ color: '#9aa0aa', fontSize: 13, marginTop: 0 }}>
+                Sends an email with a link the invitee uses to set their own name and password.
+              </p>
+
+              {invitations.length > 0 ? (
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14, marginBottom: 16 }}>
+                  <thead>
+                    <tr style={{ textAlign: 'left', color: '#9aa0aa', fontSize: 12 }}>
+                      <th style={{ paddingBottom: 8 }}>Email</th>
+                      <th style={{ paddingBottom: 8 }}>Role</th>
+                      <th style={{ paddingBottom: 8 }}>Expires</th>
+                      <th style={{ paddingBottom: 8 }}></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {invitations.map((inv) => (
+                      <tr key={inv.id} style={{ borderTop: '1px solid #2c3038' }}>
+                        <td style={{ padding: '8px 0' }}>{inv.email}</td>
+                        <td style={{ padding: '8px 0', color: '#9aa0aa' }}>{inv.role}</td>
+                        <td style={{ padding: '8px 0', color: '#9aa0aa' }}>{new Date(inv.expiresAt).toLocaleDateString()}</td>
+                        <td style={{ padding: '8px 0' }}>
+                          <button
+                            className="secondary"
+                            disabled={revokingId === inv.id}
+                            onClick={() => handleRevokeInvitation(inv)}
+                          >
+                            Revoke
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : null}
+
+              <form onSubmit={handleInvite} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {inviteError ? <div className="error">{inviteError}</div> : null}
+                <label>
+                  Email
+                  <input type="email" value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} required />
+                </label>
+                <label>
+                  Role
+                  <select value={inviteRole} onChange={(e) => setInviteRole(e.target.value)}>
+                    {roles.map((r) => (
+                      <option key={r.id} value={r.name}>
+                        {r.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                {workspaces.length > 1 ? (
+                  <label>
+                    Workspace
+                    <select value={inviteWorkspaceId} onChange={(e) => setInviteWorkspaceId(e.target.value)}>
+                      <option value="">Default (org&apos;s first workspace)</option>
+                      {workspaces.map((w) => (
+                        <option key={w.id} value={w.id}>
+                          {w.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ) : null}
+                <button type="submit" disabled={inviting}>
+                  {inviting ? 'Sending…' : 'Send invitation'}
                 </button>
               </form>
             </div>

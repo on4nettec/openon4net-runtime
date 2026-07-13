@@ -1,6 +1,6 @@
 import jwt from 'jsonwebtoken';
 import type { FastifyRequest } from 'fastify';
-import type { AuthMethod, AuthTokenResponse, UserRole } from '@o2n/shared';
+import type { AuthMethod, AuthTokenResponse } from '@o2n/shared';
 import type { AppContext } from '../context.js';
 import { AuditService } from '../services/audit-service.js';
 
@@ -13,7 +13,7 @@ interface SessionWorkspace {
 }
 interface SessionUser {
   id: string;
-  role: UserRole;
+  role: string;
 }
 
 /**

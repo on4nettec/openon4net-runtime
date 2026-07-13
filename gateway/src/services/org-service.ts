@@ -1,4 +1,4 @@
-import type { Organization, Workspace, User, UserRole } from '@o2n/shared';
+import type { Organization, OrganizationUpdateInput, Workspace, User, UserRole } from '@o2n/shared';
 import { DEFAULT_ROLE_PERMISSIONS, NotFoundError, ValidationError } from '@o2n/governance';
 import { withTransaction, type Db, type Queryable } from '../db.js';
 import { UserService } from './user-service.js';
@@ -35,6 +35,19 @@ interface UserRow {
   created_at: string;
 }
 
+function toOrganization(row: OrgRow): Organization {
+  return {
+    id: row.id,
+    name: row.name,
+    slug: row.slug,
+    plan: row.plan,
+    status: row.status,
+    settings: row.settings,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
 export interface Bootstrapped {
   organization: Pick<Organization, 'id' | 'name' | 'slug'>;
   workspace: Pick<Workspace, 'id' | 'name'>;
@@ -57,6 +70,29 @@ export interface OrgAndDefaultWorkspace {
  */
 export class OrgService {
   constructor(private db: Db) {}
+
+  async getById(organizationId: string): Promise<Organization> {
+    const { rows } = await this.db.query<OrgRow>(`SELECT * FROM organizations WHERE id = $1`, [organizationId]);
+    const row = rows[0];
+    if (!row) throw new NotFoundError('Organization', organizationId);
+    return toOrganization(row);
+  }
+
+  /** `plan`/`status` are deliberately not editable here — those are Control-Plane's job (activation/billing), not a self-service Runtime setting. */
+  async update(organizationId: string, input: OrganizationUpdateInput): Promise<Organization> {
+    const { rows } = await this.db.query<OrgRow>(
+      `UPDATE organizations
+       SET name = COALESCE($1, name),
+           settings = COALESCE($2, settings),
+           updated_at = NOW()
+       WHERE id = $3
+       RETURNING *`,
+      [input.name ?? null, input.settings ? JSON.stringify(input.settings) : null, organizationId],
+    );
+    const row = rows[0];
+    if (!row) throw new NotFoundError('Organization', organizationId);
+    return toOrganization(row);
+  }
 
   /**
    * Read-only lookup for the auth providers that don't auto-bootstrap
@@ -201,7 +237,7 @@ async function seedRoles(
   organizationId: string,
   workspaceId: string,
   adminUserId: string,
-  adminRole: UserRole,
+  adminRole: string,
 ): Promise<void> {
   const roleIdByName = new Map<string, string>();
   for (const roleName of Object.keys(DEFAULT_ROLE_PERMISSIONS) as UserRole[]) {

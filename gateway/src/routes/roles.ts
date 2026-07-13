@@ -5,10 +5,10 @@ import type { AppContext } from '../context.js';
 import { requirePermission } from '../lib/require-permission.js';
 
 /**
- * DB-backed RBAC management (migrations/0007_rbac.sql). Workspace-scoped
- * assignment UI (which workspace a user_role_binding applies to) is still
- * not implemented — user creation always binds into the org's first
- * workspace (see services/user-service.ts).
+ * DB-backed RBAC management (migrations/0007_rbac.sql). Custom roles
+ * created here are assignable to users (not just the 4 system roles) and
+ * bindable to any active workspace in the org, not just the first one — see
+ * services/user-service.ts / role-workspace-resolver.ts (RT-040).
  */
 export function registerRoleRoutes(app: FastifyInstance, ctx: AppContext): void {
   app.get('/v1/roles', async (request) => {

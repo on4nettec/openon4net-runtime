@@ -226,6 +226,7 @@ export default function AgentsPage() {
           <Link href="/skills">Skills</Link>
           <Link href="/skill-proposals">Skill Proposals</Link>
           <Link href="/marketplace">Marketplace</Link>
+          <Link href="/approvals">Approvals</Link>
           <Link href="/settings">Settings</Link>
           <button className="secondary" onClick={handleLogout}>
             Sign out

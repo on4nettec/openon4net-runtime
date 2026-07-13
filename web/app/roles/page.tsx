@@ -31,7 +31,7 @@ const PERMISSION_CATALOG: { resource: string; permissions: string[] }[] = [
   { resource: 'memory', permissions: ['memory:read', 'memory:write', 'memory:*'] },
   { resource: 'audit', permissions: ['audit:read'] },
   { resource: 'approvals', permissions: ['approvals:read', 'approvals:approve', 'approvals:*'] },
-  { resource: 'billing', permissions: ['billing:wallet:read'] },
+  { resource: 'billing', permissions: ['billing:wallet:read', 'billing:wallet:credit'] },
   { resource: 'tools', permissions: ['tools:read', 'tools:telegram-send', 'tools:webhook-send', 'tools:*'] },
   { resource: 'config', permissions: ['config:write'] },
   { resource: 'roles', permissions: ['roles:read', 'roles:write'] },
@@ -43,6 +43,8 @@ const PERMISSION_CATALOG: { resource: string; permissions: string[] }[] = [
   },
   { resource: 'skill-proposals', permissions: ['skill-proposals:read', 'skill-proposals:approve'] },
   { resource: 'marketplace', permissions: ['marketplace:read', 'marketplace:install', 'marketplace:*'] },
+  { resource: 'organization', permissions: ['organization:read', 'organization:write', 'organization:*'] },
+  { resource: 'invitations', permissions: ['invitations:create', 'invitations:read', 'invitations:revoke', 'invitations:*'] },
 ];
 
 export default function RolesPage() {
@@ -146,6 +148,7 @@ export default function RolesPage() {
           <Link href="/skills">Skills</Link>
           <Link href="/skill-proposals">Skill Proposals</Link>
           <Link href="/marketplace">Marketplace</Link>
+          <Link href="/approvals">Approvals</Link>
           <Link href="/policies">Policies</Link>
           <Link href="/audit">Audit Log</Link>
           <Link href="/settings">Settings</Link>

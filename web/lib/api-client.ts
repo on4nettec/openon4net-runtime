@@ -7,8 +7,9 @@ import type {
   Conversation,
   ErrorEnvelope,
   Message,
+  ApprovalQueueEntry,
+  Organization,
   User,
-  UserRole,
   Workspace,
 } from '@o2n/shared';
 
@@ -70,6 +71,18 @@ export interface Skill {
   avgDurationMs: number | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface Invitation {
+  id: string;
+  organizationId: string;
+  email: string;
+  role: string;
+  workspaceId: string | null;
+  invitedByUserId: string | null;
+  status: 'pending' | 'accepted' | 'revoked' | 'expired';
+  expiresAt: string;
+  createdAt: string;
 }
 
 export interface SkillGrant {
@@ -321,18 +334,24 @@ export const api = {
 
   listUsers: () => request<User[]>('/v1/users'),
 
-  createUser: (input: { email: string; name: string; role: UserRole }) =>
+  createUser: (input: { email: string; name: string; role: string; workspaceId?: string | undefined }) =>
     request<User>('/v1/users', { method: 'POST', body: JSON.stringify(input) }),
 
-  updateUser: (userId: string, input: { role?: UserRole; isActive?: boolean }) =>
+  updateUser: (userId: string, input: { role?: string; workspaceId?: string; isActive?: boolean }) =>
     request<User>(`/v1/users/${userId}`, { method: 'PATCH', body: JSON.stringify(input) }),
 
   deactivateUser: (userId: string) => request<void>(`/v1/users/${userId}`, { method: 'DELETE' }),
 
-  listWorkspaces: () => request<Workspace[]>('/v1/workspaces'),
+  listWorkspaces: (includeArchived = false) =>
+    request<Workspace[]>(`/v1/workspaces${includeArchived ? '?includeArchived=true' : ''}`),
 
   createWorkspace: (input: { name: string; description?: string | undefined }) =>
     request<Workspace>('/v1/workspaces', { method: 'POST', body: JSON.stringify(input) }),
+
+  updateWorkspace: (id: string, input: { name?: string | undefined; description?: string | undefined }) =>
+    request<Workspace>(`/v1/workspaces/${id}`, { method: 'PATCH', body: JSON.stringify(input) }),
+
+  archiveWorkspace: (id: string) => request<Workspace>(`/v1/workspaces/${id}/archive`, { method: 'POST' }),
 
   getAuditLogs: (params: { limit?: number; offset?: number; agentId?: string } = {}) => {
     const query = new URLSearchParams();
@@ -463,4 +482,32 @@ export const api = {
       `/v1/marketplace/installs/${installId}/config`,
       { method: 'PATCH', body: JSON.stringify({ config }) },
     ),
+
+  getOrganization: () => request<Organization>('/v1/organization'),
+
+  updateOrganization: (input: { name?: string; settings?: Record<string, unknown> }) =>
+    request<Organization>('/v1/organization', { method: 'PATCH', body: JSON.stringify(input) }),
+
+  listInvitations: () => request<Invitation[]>('/v1/invitations'),
+
+  createInvitation: (input: { email: string; role: string; workspaceId?: string | undefined }) =>
+    request<Invitation>('/v1/invitations', { method: 'POST', body: JSON.stringify(input) }),
+
+  revokeInvitation: (id: string) => request<void>(`/v1/invitations/${id}`, { method: 'DELETE' }),
+
+  acceptInvitation: (token: string, input: { name: string; password: string }) =>
+    request<Session>(`/v1/auth/invitations/${token}/accept`, { method: 'POST', body: JSON.stringify(input) }),
+
+  listPendingApprovals: () => request<ApprovalQueueEntry[]>('/v1/approvals/pending'),
+
+  approveApproval: (id: string) => request<unknown>(`/v1/approvals/${id}/approve`, { method: 'POST' }),
+
+  rejectApproval: (id: string) =>
+    request<{ status: string; approvalId: string }>(`/v1/approvals/${id}/reject`, { method: 'POST' }),
+
+  getWallet: () =>
+    request<{ balanceCredits: number; status: 'active' | 'suspended'; initialized?: boolean }>('/v1/wallet'),
+
+  creditWallet: (input: { amountCredits: number; reason: string }) =>
+    request<{ balanceCredits: number }>('/v1/wallet/credit', { method: 'POST', body: JSON.stringify(input) }),
 };

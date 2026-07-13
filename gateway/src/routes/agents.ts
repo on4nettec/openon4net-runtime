@@ -10,11 +10,13 @@ import { AgentService } from '../services/agent-service.js';
 import { AgentAccessService, assertValidAccessRole } from '../services/agent-access-service.js';
 import { AuditService } from '../services/audit-service.js';
 import { MemoryService } from '../services/memory-service.js';
+import { WorkspaceService } from '../services/workspace-service.js';
 
 export function registerAgentRoutes(app: FastifyInstance, ctx: AppContext): void {
   const agentService = new AgentService(ctx.db);
   const agentAccessService = new AgentAccessService(ctx.db);
   const memoryService = new MemoryService(ctx.db, ctx.redis, ctx.env.SHORT_MEMORY_TTL_SECONDS, ctx.embeddingService);
+  const workspaceService = new WorkspaceService(ctx.db);
 
   // Every write below runs in a transaction with its own audit_logs insert —
   // an agent mutation must never be committed without an audit trail
@@ -24,6 +26,9 @@ export function registerAgentRoutes(app: FastifyInstance, ctx: AppContext): void
     requirePermission(request, 'agents:create');
     const parsed = AgentCreateSchema.safeParse(request.body);
     if (!parsed.success) throw new ValidationError('Invalid agent payload', parsed.error.flatten());
+
+    const workspaceActive = await workspaceService.isActive(request.auth.organizationId, parsed.data.workspaceId);
+    if (!workspaceActive) throw new ValidationError('Cannot create an agent in an archived (or unknown) workspace');
 
     return withTransaction(ctx.db, async (client) => {
       const agent = await new AgentService(client).create(request.auth.organizationId, parsed.data);

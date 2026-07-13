@@ -41,12 +41,13 @@ export async function createTestFixture(db: Db): Promise<TestFixture> {
 /**
  * Deletes everything created for organizationId. Not a single cascading
  * DELETE FROM organizations — `audit_logs`/`skills`/`skill_proposals`/
- * `users`'s `organization_id` FK has no ON DELETE CASCADE (pre-existing
- * schema, orgs are never hard-deleted in production), so child rows are
- * removed explicitly first, in dependency order.
+ * `approval_queue`/`users`'s `organization_id` FK has no ON DELETE CASCADE
+ * (pre-existing schema, orgs are never hard-deleted in production), so
+ * child rows are removed explicitly first, in dependency order.
  */
 export async function cleanupTestFixture(db: Db, organizationId: string): Promise<void> {
   await db.query(`DELETE FROM audit_logs WHERE organization_id = $1`, [organizationId]);
+  await db.query(`DELETE FROM approval_queue WHERE organization_id = $1`, [organizationId]);
   await db.query(`DELETE FROM skill_proposals WHERE organization_id = $1`, [organizationId]);
   await db.query(`DELETE FROM skills WHERE organization_id = $1`, [organizationId]);
   await db.query(`DELETE FROM users WHERE organization_id = $1`, [organizationId]);

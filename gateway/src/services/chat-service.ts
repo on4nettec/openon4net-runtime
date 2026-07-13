@@ -1,20 +1,32 @@
 import type { LlmCompletionResult, LlmMessage, LlmProvider } from '@o2n/llm-providers';
 import type { Agent, Conversation } from '@o2n/shared';
-import { AgentNotActiveError, BudgetExceededError, NotFoundError, O2NError, requiresApproval } from '@o2n/governance';
+import {
+  AgentNotActiveError,
+  BudgetExceededError,
+  NotFoundError,
+  O2NError,
+  WalletInsufficientBalanceError,
+  requiresApproval,
+} from '@o2n/governance';
 import type { Env } from '../env.js';
 import { withTransaction, type Db } from '../db.js';
 import type { RedisClient } from '../redis.js';
 import { AgentService } from './agent-service.js';
 import { AgentAccessService } from './agent-access-service.js';
+import { ApprovalService } from './approval-service.js';
 import { AuditService } from './audit-service.js';
 import { MemoryService, AUTO_SUMMARY_EVERY_N_MESSAGES } from './memory-service.js';
 import { UserService } from './user-service.js';
+import { WalletService } from './wallet-service.js';
 import { LlmService } from './llm-service.js';
 import type { ProviderConfigService } from './provider-config-service.js';
 import type { EmbeddingService } from './embedding-service.js';
 import type { PolicyService } from './policy-service.js';
 import { calculateCostCents, estimateCostCentsFromChars, estimatePromptCostCents } from './pricing.js';
 import { llmCostCentsTotal } from '../observability/metrics.js';
+
+/** A chat-cost/policy approval that sits unresolved this long auto-expires (services/approval-expiry-scheduler.ts) — a stale request shouldn't silently execute if approved days later against now-stale context. */
+const APPROVAL_EXPIRY_MS = 24 * 60 * 60 * 1000;
 
 export interface ChatParams {
   organizationId: string;
@@ -124,12 +136,22 @@ export class ChatService {
       throw new BudgetExceededError(agent.id, agent.monthlyBudgetCents);
     }
 
+    const estimatedCostCents = estimatePromptCostCents(model, params.message.length, providerName);
+
+    // Budget gate 3: org-level wallet, if one has been initialized (see
+    // wallet-service.ts) -> hard stop, same as gate 1. Not skippable on
+    // approval-resume: a human approving an over-threshold *policy* concern
+    // doesn't override an empty wallet, that's a separate hard constraint.
+    const wallet = await new WalletService(this.db).find(params.organizationId);
+    if (wallet && wallet.balanceCredits < estimatedCostCents) {
+      throw new WalletInsufficientBalanceError(params.organizationId, wallet.balanceCredits);
+    }
+
     // Budget gate 2: this specific request's estimated cost exceeds the
     // approval threshold -> human-in-the-loop (build pack §4.3), not an
     // error. Additive with org-configured ABAC policies (RT-008) - either
     // one triggering is enough, neither replaces the other.
     if (!skipApprovalGate) {
-      const estimatedCostCents = estimatePromptCostCents(model, params.message.length, providerName);
       const envThresholdHit = requiresApproval(estimatedCostCents, this.env.APPROVAL_THRESHOLD_CENTS);
       const policyResult = await this.policyService.evaluate(params.organizationId, { estimatedCostCents });
       if (envThresholdHit || policyResult.requiresApproval) {
@@ -183,6 +205,13 @@ export class ChatService {
         tokens: result.tokens,
       });
       await new AgentService(client).addUsedBudget(organizationId, agentId, result.costCents);
+      // Opt-in: only debit if this org already has a wallet row (see budget
+      // gate 3 in prepare()) — a chat turn must never auto-provision one.
+      if (result.costCents > 0) {
+        const walletService = new WalletService(client);
+        const wallet = await walletService.find(organizationId);
+        if (wallet) await walletService.debit(organizationId, result.costCents, `agent-chat:${traceId}`);
+      }
       llmCostCentsTotal.inc({ provider: providerName, model: result.model }, result.costCents);
       await new AuditService(client).logAction({
         organizationId,
@@ -322,25 +351,19 @@ export class ChatService {
         ? `Matched policy: ${matchedPolicyNames.join(', ')} (estimated cost ${estimatedCostCents} cents)`
         : `Estimated cost ${estimatedCostCents} cents exceeds threshold ${this.env.APPROVAL_THRESHOLD_CENTS} cents`;
     return withTransaction(this.db, async (client) => {
-      const { rows } = await client.query<{ id: string }>(
-        `INSERT INTO approval_queue (organization_id, agent_id, action_data, reason)
-         VALUES ($1, $2, $3, $4) RETURNING id`,
-        [
-          params.organizationId,
-          agentId,
-          JSON.stringify({
-            traceId: params.traceId,
-            message: params.message,
-            conversationId: params.conversationId ?? null,
-            userId: params.userId,
-            estimatedCostCents,
-            matchedPolicyNames,
-          }),
-          reason,
-        ],
-      );
-      const row = rows[0];
-      if (!row) throw new Error('Insert did not return a row');
+      const entry = await new ApprovalService(client).create(params.organizationId, {
+        agentId,
+        actionData: {
+          traceId: params.traceId,
+          message: params.message,
+          conversationId: params.conversationId ?? null,
+          userId: params.userId,
+          estimatedCostCents,
+          matchedPolicyNames,
+        },
+        reason,
+        expiresAt: new Date(Date.now() + APPROVAL_EXPIRY_MS),
+      });
       await new AuditService(client).logAction({
         organizationId: params.organizationId,
         agentId,
@@ -350,7 +373,7 @@ export class ChatService {
         status: 'pending',
         approvalStatus: 'pending',
       });
-      return row.id;
+      return entry.id;
     });
   }
 

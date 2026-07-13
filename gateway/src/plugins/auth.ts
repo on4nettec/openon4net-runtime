@@ -2,13 +2,12 @@ import { randomUUID } from 'node:crypto';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import jwt from 'jsonwebtoken';
 import { PermissionDeniedError, ValidationError } from '@o2n/governance';
-import type { UserRole } from '@o2n/shared';
 import type { PermissionService } from '../services/permission-service.js';
 
 export interface AuthContext {
   userId: string;
   organizationId: string;
-  role: UserRole;
+  role: string;
   /** Resolved once per request from the DB (migrations/0007_rbac.sql) — see lib/require-permission.ts. */
   permissions: string[];
 }
@@ -23,7 +22,7 @@ declare module 'fastify' {
 interface AccessTokenClaims {
   sub: string;
   organizationId: string;
-  role: UserRole;
+  role: string;
 }
 
 // RT-014..018: every login entrypoint across all auth providers is
@@ -40,6 +39,7 @@ const PUBLIC_ROUTES = new Set([
   '/v1/auth/magic-link/verify',
   '/v1/auth/oauth/:provider/start',
   '/v1/auth/oauth/:provider/callback',
+  '/v1/auth/invitations/:token/accept',
 ]);
 
 export function registerAuth(app: FastifyInstance, jwtSecret: string, permissionService: PermissionService): void {

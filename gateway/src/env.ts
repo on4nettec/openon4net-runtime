@@ -106,6 +106,12 @@ const EnvSchema = z
     // that explicit instead of inferring it from blank credentials.
     SMTP_SECURE: boolEnv(false),
 
+    // Base URL of the web dashboard — used to build a clickable link in
+    // invitation emails (routes/invitations.ts). Optional: if unset, the
+    // email falls back to a raw token, same degrade-gracefully pattern as
+    // the rest of this env file.
+    WEB_URL: z.string().url().optional(),
+
     // --- oauth provider (RT-017) ---
     OAUTH_PROVIDERS: z.string().optional(),
     OAUTH_GOOGLE_CLIENT_ID: z.string().min(1).optional(),
