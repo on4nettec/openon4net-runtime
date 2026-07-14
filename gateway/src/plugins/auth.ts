@@ -40,6 +40,9 @@ const PUBLIC_ROUTES = new Set([
   '/v1/auth/oauth/:provider/start',
   '/v1/auth/oauth/:provider/callback',
   '/v1/auth/invitations/:token/accept',
+  // RT-065: inbound webhook — the unguessable token in the path is itself
+  // the auth, same trust model as the invitation-accept route above.
+  '/v1/webhooks/:token',
 ]);
 
 export function registerAuth(app: FastifyInstance, jwtSecret: string, permissionService: PermissionService): void {

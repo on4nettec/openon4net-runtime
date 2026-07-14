@@ -11,6 +11,7 @@ import {
 } from '../services/marketplace-client.js';
 import { SkillService } from '../services/skill-service.js';
 import { AuditService } from '../services/audit-service.js';
+import { WalletService } from '../services/wallet-service.js';
 
 function assertMarketplaceConfigured(ctx: AppContext): void {
   if (!ctx.env.MARKETPLACE_SERVICE_URL) {
@@ -47,6 +48,20 @@ export function registerMarketplaceRoutes(app: FastifyInstance, ctx: AppContext)
       if (!ctx.activationState.isActivated()) throw new ActivationRequiredError();
 
       const body = (request.body ?? {}) as { version?: string; acknowledgePermissionDiff?: boolean };
+
+      // RT-057: learn the price *before* touching the marketplace service —
+      // debit-then-install means a failed/insufficient debit never installs
+      // anything for free, and a debit success never needs to be rolled back.
+      const plugin = await marketplaceClient.getPlugin(ctx.env, request.params.id);
+      const priceCredits = plugin?.priceCredits ?? 0;
+      if (priceCredits > 0) {
+        await new WalletService(ctx.db).debit(
+          request.auth.organizationId,
+          priceCredits,
+          `marketplace-install-plugin:${request.params.id}`,
+        );
+      }
+
       let result: Record<string, unknown>;
       try {
         result = await marketplaceClient.installPlugin(ctx.env, request.params.id, request.auth.organizationId, {
@@ -67,7 +82,7 @@ export function registerMarketplaceRoutes(app: FastifyInstance, ctx: AppContext)
         organizationId: request.auth.organizationId,
         userId: request.auth.userId,
         actionType: 'marketplace-install-plugin',
-        actionData: { traceId: request.traceId, pluginId: request.params.id },
+        actionData: { traceId: request.traceId, pluginId: request.params.id, priceCredits },
       });
       return result;
     },
@@ -77,6 +92,17 @@ export function registerMarketplaceRoutes(app: FastifyInstance, ctx: AppContext)
     requirePermission(request, 'marketplace:install');
     assertMarketplaceConfigured(ctx);
     if (!ctx.activationState.isActivated()) throw new ActivationRequiredError();
+
+    // RT-057: same debit-before-install ordering as the plugin route above.
+    const marketplaceSkill = await marketplaceClient.getSkill(ctx.env, request.params.id);
+    const priceCents = marketplaceSkill?.priceCents ?? 0;
+    if (priceCents > 0) {
+      await new WalletService(ctx.db).debit(
+        request.auth.organizationId,
+        priceCents,
+        `marketplace-install-skill:${request.params.id}`,
+      );
+    }
 
     const installed = await marketplaceClient.installSkill(ctx.env, request.params.id, request.auth.organizationId);
 
@@ -93,7 +119,7 @@ export function registerMarketplaceRoutes(app: FastifyInstance, ctx: AppContext)
       organizationId: request.auth.organizationId,
       userId: request.auth.userId,
       actionType: 'marketplace-install-skill',
-      actionData: { traceId: request.traceId, marketplaceSkillId: request.params.id, localSkillId: skill.id },
+      actionData: { traceId: request.traceId, marketplaceSkillId: request.params.id, localSkillId: skill.id, priceCents },
     });
     return { install: installed, skill };
   });

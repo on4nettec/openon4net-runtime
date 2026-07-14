@@ -266,7 +266,8 @@ export default function MarketplacePage() {
                               </div>
                             ) : null}
                             <div style={{ color: '#9aa0aa', fontSize: 12 }}>
-                              {plugin.installCount} installs · {formatRating(plugin.avgRating, plugin.ratingCount)}
+                              {plugin.priceCredits ? `${plugin.priceCredits} credits` : 'Free'} · {plugin.installCount}{' '}
+                              installs · {formatRating(plugin.avgRating, plugin.ratingCount)}
                             </div>
                           </div>
                           <button
@@ -274,7 +275,7 @@ export default function MarketplacePage() {
                             disabled={busyId === plugin.pluginId || installed}
                             onClick={() => handleInstallPlugin(plugin)}
                           >
-                            {installed ? 'Installed' : 'Install'}
+                            {installed ? 'Installed' : plugin.priceCredits ? `Install (${plugin.priceCredits}cr)` : 'Install'}
                           </button>
                         </div>
 

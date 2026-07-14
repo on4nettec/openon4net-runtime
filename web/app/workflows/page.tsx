@@ -3,7 +3,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { api, loadSession, ApiError, type Workflow, type WorkflowRun } from '@/lib/api-client';
+import { api, loadSession, ApiError, downloadJson, type Workflow, type WorkflowRun } from '@/lib/api-client';
 
 const EXAMPLE_DEFINITION = JSON.stringify(
   {
@@ -26,6 +26,8 @@ export default function WorkflowsPage() {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [definitionText, setDefinitionText] = useState(EXAMPLE_DEFINITION);
+  const [triggerType, setTriggerType] = useState<'manual' | 'scheduled'>('manual');
+  const [intervalMinutes, setIntervalMinutes] = useState(60);
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
 
@@ -56,7 +58,9 @@ export default function WorkflowsPage() {
     setCreateError(null);
     try {
       const definition = JSON.parse(definitionText);
-      await api.createWorkflow({ name, description: description || undefined, definition });
+      const trigger: { type: 'manual' } | { type: 'scheduled'; intervalMinutes: number } =
+        triggerType === 'scheduled' ? { type: 'scheduled', intervalMinutes } : { type: 'manual' };
+      await api.createWorkflow({ name, description: description || undefined, definition, trigger });
       setName('');
       setDescription('');
       setDefinitionText(EXAMPLE_DEFINITION);
@@ -71,6 +75,29 @@ export default function WorkflowsPage() {
       );
     } finally {
       setCreating(false);
+    }
+  }
+
+  async function handleExport(workflow: Workflow) {
+    setError(null);
+    try {
+      const exported = await api.exportWorkflow(workflow.id);
+      downloadJson(`${workflow.name.replace(/\s+/g, '-').toLowerCase()}.json`, exported);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Failed to export workflow');
+    }
+  }
+
+  function handleImportPaste() {
+    try {
+      const parsed = JSON.parse(definitionText);
+      if (parsed.definition && parsed.name) {
+        setName(parsed.name);
+        setDescription(parsed.description ?? '');
+        setDefinitionText(JSON.stringify(parsed.definition, null, 2));
+      }
+    } catch {
+      // not a full export blob — leave as-is, it may just be a plain definition
     }
   }
 
@@ -115,6 +142,7 @@ export default function WorkflowsPage() {
           <Link href="/marketplace">Marketplace</Link>
           <Link href="/approvals">Approvals</Link>
           <strong>Workflows</strong>
+          <Link href="/webhooks">Webhooks</Link>
           <Link href="/policies">Policies</Link>
           <Link href="/settings">Settings</Link>
         </nav>
@@ -124,8 +152,8 @@ export default function WorkflowsPage() {
         <h1 style={{ fontSize: 20 }}>Workflows</h1>
         <p style={{ color: '#9aa0aa', fontSize: 14 }}>
           Multi-step orchestration across agents, tools, and human approvals. Steps run in order unless a{' '}
-          <code>condition</code> step branches or a <code>parallel</code> step fans out. Manual run only in this
-          version — no scheduled/event triggers yet.
+          <code>condition</code> step branches or a <code>parallel</code> step fans out. Runs manually, on a
+          schedule, or via an inbound webhook (see <Link href="/webhooks">Webhooks</Link>).
         </p>
 
         {error ? <div className="error">{error}</div> : null}
@@ -148,7 +176,10 @@ export default function WorkflowsPage() {
                           <div>
                             <strong>{workflow.name}</strong>{' '}
                             <span style={{ color: '#9aa0aa', fontSize: 12 }}>
-                              {workflow.status} · {workflow.definition.steps.length} steps
+                              {workflow.status} · {workflow.definition.steps.length} steps ·{' '}
+                              {workflow.trigger.type === 'scheduled'
+                                ? `every ${workflow.trigger.intervalMinutes}m`
+                                : workflow.trigger.type}
                             </span>
                             {workflow.description ? (
                               <div style={{ color: '#9aa0aa', fontSize: 12 }}>{workflow.description}</div>
@@ -160,6 +191,9 @@ export default function WorkflowsPage() {
                             </button>
                             <button className="secondary" onClick={() => toggleRuns(workflow)}>
                               {runsOpen ? 'Hide runs' : 'Show runs'}
+                            </button>
+                            <button className="secondary" onClick={() => handleExport(workflow)}>
+                              Export
                             </button>
                           </div>
                         </div>
@@ -213,7 +247,9 @@ export default function WorkflowsPage() {
                   <input value={description} onChange={(e) => setDescription(e.target.value)} />
                 </label>
                 <label>
-                  Definition (JSON — steps array, see example)
+                  Definition (JSON — steps array, see example). Paste a full exported{' '}
+                  <code>{'{name, description, definition}'}</code> blob here, then click &quot;Fill from paste&quot;
+                  to import it.
                   <textarea
                     value={definitionText}
                     onChange={(e) => setDefinitionText(e.target.value)}
@@ -222,6 +258,27 @@ export default function WorkflowsPage() {
                     required
                   />
                 </label>
+                <button type="button" className="secondary" onClick={handleImportPaste}>
+                  Fill from paste
+                </button>
+                <label>
+                  Trigger
+                  <select value={triggerType} onChange={(e) => setTriggerType(e.target.value as 'manual' | 'scheduled')}>
+                    <option value="manual">Manual only</option>
+                    <option value="scheduled">Scheduled</option>
+                  </select>
+                </label>
+                {triggerType === 'scheduled' ? (
+                  <label>
+                    Interval (minutes)
+                    <input
+                      type="number"
+                      min={1}
+                      value={intervalMinutes}
+                      onChange={(e) => setIntervalMinutes(Number(e.target.value))}
+                    />
+                  </label>
+                ) : null}
                 <button type="submit" disabled={creating}>
                   {creating ? 'Creating…' : 'Create workflow'}
                 </button>

@@ -14,6 +14,9 @@ import { startActivationScheduler } from './services/activation-scheduler.js';
 import { startApprovalExpiryScheduler } from './services/approval-expiry-scheduler.js';
 import { startAgentMessageScheduler } from './services/agent-message-scheduler.js';
 import { startAuditRetentionScheduler } from './services/audit-retention-scheduler.js';
+import { startKpiSnapshotScheduler } from './services/kpi-snapshot-scheduler.js';
+import { startReportScheduler } from './services/report-scheduler.js';
+import { startWorkflowTriggerScheduler } from './services/workflow-trigger-scheduler.js';
 import type { AppContext } from './context.js';
 
 async function main(): Promise<void> {
@@ -47,6 +50,9 @@ async function main(): Promise<void> {
   startApprovalExpiryScheduler(ctx);
   startAgentMessageScheduler(ctx);
   startAuditRetentionScheduler(ctx);
+  startKpiSnapshotScheduler(ctx);
+  startReportScheduler(ctx);
+  startWorkflowTriggerScheduler(ctx);
 
   await app.listen({ port: env.PORT, host: '0.0.0.0' });
 }

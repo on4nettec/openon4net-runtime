@@ -39,7 +39,11 @@ describe('WorkflowService', () => {
     const fixture = await withFixture();
     const workflowService = new WorkflowService(db);
 
-    const workflow = await workflowService.create(fixture.organizationId, { name: 'My workflow', definition }, fixture.userId);
+    const workflow = await workflowService.create(
+      fixture.organizationId,
+      { name: 'My workflow', trigger: { type: 'manual' }, definition },
+      fixture.userId,
+    );
     expect(workflow.status).toBe('draft');
     expect(workflow.definition).toEqual(definition);
   });
@@ -51,7 +55,7 @@ describe('WorkflowService', () => {
 
     const workflow = await workflowService.create(
       other.organizationId,
-      { name: 'Other org workflow', definition },
+      { name: 'Other org workflow', trigger: { type: 'manual' }, definition },
       other.userId,
     );
 
@@ -63,8 +67,16 @@ describe('WorkflowService', () => {
     const other = await withFixture();
     const workflowService = new WorkflowService(db);
 
-    const mine = await workflowService.create(fixture.organizationId, { name: 'Mine', definition }, fixture.userId);
-    const theirs = await workflowService.create(other.organizationId, { name: 'Theirs', definition }, other.userId);
+    const mine = await workflowService.create(
+      fixture.organizationId,
+      { name: 'Mine', trigger: { type: 'manual' }, definition },
+      fixture.userId,
+    );
+    const theirs = await workflowService.create(
+      other.organizationId,
+      { name: 'Theirs', trigger: { type: 'manual' }, definition },
+      other.userId,
+    );
 
     const list = await workflowService.list(fixture.organizationId);
     expect(list.some((w) => w.id === mine.id)).toBe(true);
@@ -77,7 +89,7 @@ describe('WorkflowService', () => {
 
     const workflow = await workflowService.create(
       fixture.organizationId,
-      { name: 'Draft workflow', definition },
+      { name: 'Draft workflow', trigger: { type: 'manual' }, definition },
       fixture.userId,
     );
     const updated = await workflowService.update(fixture.organizationId, workflow.id, {

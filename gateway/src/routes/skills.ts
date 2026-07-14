@@ -63,6 +63,15 @@ export function registerSkillRoutes(app: FastifyInstance, ctx: AppContext): void
     return skillService.getById(request.auth.organizationId, request.params.id);
   });
 
+  // RT-067: portable subset only — no org-specific id/version/execution
+  // stats. "Import" is just POSTing this shape to POST /v1/skills, no
+  // separate import endpoint.
+  app.get<{ Params: { id: string } }>('/v1/skills/:id/export', async (request) => {
+    requirePermission(request, 'skills:read');
+    const skill = await skillService.getById(request.auth.organizationId, request.params.id);
+    return { name: skill.name, description: skill.description, definition: skill.definition };
+  });
+
   app.patch<{ Params: { id: string } }>('/v1/skills/:id', async (request) => {
     requirePermission(request, 'skills:update');
     const parsed = SkillUpdateSchema.safeParse(request.body);

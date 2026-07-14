@@ -144,9 +144,11 @@ describe('AuditService', () => {
 
       const rows = await rawRows(fixture.organizationId);
       const [old1, old2] = rows;
-      await db.query(`UPDATE audit_logs SET created_at = NOW() - INTERVAL '40 days' WHERE id = ANY($1)`, [
-        [old1!.id, old2!.id],
-      ]);
+      // Staggered, not identical — two rows sharing one created_at would make
+      // "newest of the two" an unpredictable UUID tiebreak instead of a real
+      // ordering (this was a real flaky-test bug, not a Phase 4 regression).
+      await db.query(`UPDATE audit_logs SET created_at = NOW() - INTERVAL '41 days' WHERE id = $1`, [old1!.id]);
+      await db.query(`UPDATE audit_logs SET created_at = NOW() - INTERVAL '40 days' WHERE id = $1`, [old2!.id]);
 
       await auditService.purgeExpired(fixture.organizationId, 30);
 

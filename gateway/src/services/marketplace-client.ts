@@ -14,6 +14,8 @@ export interface MarketplacePluginSummary {
   installCount: number;
   avgRating: number | null;
   ratingCount: number;
+  /** From the latest approved version's pricing (RT-057) — null/0 means free. */
+  priceCredits: number | null;
   createdAt: string;
 }
 
@@ -102,6 +104,18 @@ interface MarketplaceErrorBody {
   error?: { code?: string; message?: string; details?: Record<string, unknown> };
 }
 
+/** Carries the marketplace service's own error `code` through, instead of a plain Error's message-only text — lets callers branch reliably (e.g. getPlugin/getSkill checking for NOT_FOUND) without regex-matching prose. */
+export class MarketplaceRequestError extends Error {
+  constructor(
+    message: string,
+    public code: string | undefined,
+    public status: number,
+  ) {
+    super(message);
+    this.name = 'MarketplaceRequestError';
+  }
+}
+
 async function marketplaceRequest<T>(env: Env, path: string, init?: RequestInit): Promise<T> {
   if (!env.MARKETPLACE_SERVICE_URL) {
     throw new Error('MARKETPLACE_SERVICE_URL is not configured');
@@ -121,7 +135,11 @@ async function marketplaceRequest<T>(env: Env, path: string, init?: RequestInit)
       const details = body.error.details as { addedPermissions?: string[]; fromVersion?: string; toVersion?: string } | undefined;
       throw new PermissionDiffRequiredError(details?.addedPermissions ?? [], details?.fromVersion ?? '?', details?.toVersion ?? '?');
     }
-    throw new Error(body?.error?.message ?? `Marketplace request failed with status ${response.status}`);
+    throw new MarketplaceRequestError(
+      body?.error?.message ?? `Marketplace request failed with status ${response.status}`,
+      body?.error?.code,
+      response.status,
+    );
   }
   return (await response.json()) as T;
 }
@@ -136,6 +154,26 @@ export const marketplaceClient = {
   listPlugins: (env: Env) => marketplaceRequest<{ plugins: MarketplacePluginSummary[]; total: number }>(env, '/marketplace/plugins'),
 
   listSkills: (env: Env) => marketplaceRequest<{ skills: MarketplaceSkillSummary[]; total: number }>(env, '/marketplace/skills'),
+
+  /** RT-057 — learn a plugin's price before deciding whether to debit the installing org's wallet. Returns null for an unknown/unapproved plugin. */
+  getPlugin: async (env: Env, pluginId: string): Promise<MarketplacePluginSummary | null> => {
+    try {
+      return await marketplaceRequest<MarketplacePluginSummary>(env, `/marketplace/plugins/${pluginId}`);
+    } catch (err) {
+      if (err instanceof MarketplaceRequestError && err.status === 404) return null;
+      throw err;
+    }
+  },
+
+  /** RT-057 — same, for skills. Returns null for an unknown/delisted skill. */
+  getSkill: async (env: Env, skillId: string): Promise<MarketplaceSkillSummary | null> => {
+    try {
+      return await marketplaceRequest<MarketplaceSkillSummary>(env, `/marketplace/skills/${skillId}`);
+    } catch (err) {
+      if (err instanceof MarketplaceRequestError && err.status === 404) return null;
+      throw err;
+    }
+  },
 
   installPlugin: (env: Env, pluginId: string, organizationId: string, opts: InstallPluginOptions = {}) =>
     marketplaceRequest<Record<string, unknown>>(env, `/marketplace/plugins/${pluginId}/install`, {

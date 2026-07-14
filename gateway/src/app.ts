@@ -27,6 +27,9 @@ import { registerInvitationRoutes } from './routes/invitations.js';
 import { registerAuthInvitationRoutes } from './routes/auth-invitations.js';
 import { registerWalletRoutes } from './routes/wallet.js';
 import { registerWorkflowRoutes } from './routes/workflows.js';
+import { registerReportRoutes } from './routes/reports.js';
+import { registerInsightRoutes } from './routes/insights.js';
+import { registerWebhookRoutes } from './routes/webhooks.js';
 
 export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
   const app = Fastify({ logger: true });
@@ -65,6 +68,9 @@ export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
   registerAuthInvitationRoutes(app, ctx);
   registerWalletRoutes(app, ctx);
   registerWorkflowRoutes(app, ctx);
+  registerReportRoutes(app, ctx);
+  registerInsightRoutes(app, ctx);
+  registerWebhookRoutes(app, ctx);
 
   return app;
 }

@@ -105,13 +105,12 @@ describe('AgentService', () => {
     const fixture = await withFixture();
     const agentService = new AgentService(db);
 
-    const updated = await agentService.updateKpis(fixture.organizationId, fixture.agentId, [
-      { name: 'Tickets closed', target: 100, current: 40 },
-    ]);
-    expect(updated.kpiConfig).toEqual({ kpis: [{ name: 'Tickets closed', target: 100, current: 40 }] });
+    const kpi = { name: 'Tickets closed', target: 100, current: 40, metricType: 'manual' as const, windowDays: 7 };
+    const updated = await agentService.updateKpis(fixture.organizationId, fixture.agentId, [kpi]);
+    expect(updated.kpiConfig).toEqual({ kpis: [kpi] });
 
     const refreshed = await agentService.getById(fixture.organizationId, fixture.agentId);
-    expect(refreshed.kpiConfig).toEqual({ kpis: [{ name: 'Tickets closed', target: 100, current: 40 }] });
+    expect(refreshed.kpiConfig).toEqual({ kpis: [kpi] });
   });
 
   it('findByRole returns the first active match, null if none', async () => {

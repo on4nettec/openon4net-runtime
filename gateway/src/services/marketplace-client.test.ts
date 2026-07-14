@@ -91,6 +91,71 @@ describe('marketplace-client', () => {
     await expect(marketplaceClient.listSkills(env)).rejects.toThrow('Marketplace is disabled');
   });
 
+  it('getPlugin() returns the priced item on a 200', async () => {
+    server = createServer((req, res) => {
+      res.setHeader('Content-Type', 'application/json');
+      res.end(
+        JSON.stringify({
+          pluginId: 'p1',
+          packageName: 'com.o2n.p1',
+          name: 'Plugin One',
+          description: null,
+          publisherSlug: 'acme',
+          publisherVerified: true,
+          latestVersion: '1.0.0',
+          manifest: null,
+          permissions: [],
+          installCount: 0,
+          avgRating: null,
+          ratingCount: 0,
+          priceCredits: 500,
+          createdAt: '2026-01-01T00:00:00Z',
+        }),
+      );
+    });
+    const port = await listen(server);
+    const env = createTestEnv({ MARKETPLACE_SERVICE_URL: `http://127.0.0.1:${port}` });
+
+    const plugin = await marketplaceClient.getPlugin(env, 'p1');
+    expect(plugin?.priceCredits).toBe(500);
+  });
+
+  it('getPlugin() returns null instead of throwing on a 404 (RT-057 — install treats this as "no such item")', async () => {
+    server = createServer((req, res) => {
+      res.statusCode = 404;
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({ error: { code: 'NOT_FOUND', message: 'Plugin not found' } }));
+    });
+    const port = await listen(server);
+    const env = createTestEnv({ MARKETPLACE_SERVICE_URL: `http://127.0.0.1:${port}` });
+
+    expect(await marketplaceClient.getPlugin(env, 'missing')).toBeNull();
+  });
+
+  it('getPlugin() still throws for a non-404 error', async () => {
+    server = createServer((req, res) => {
+      res.statusCode = 500;
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({ error: { message: 'boom' } }));
+    });
+    const port = await listen(server);
+    const env = createTestEnv({ MARKETPLACE_SERVICE_URL: `http://127.0.0.1:${port}` });
+
+    await expect(marketplaceClient.getPlugin(env, 'p1')).rejects.toThrow('boom');
+  });
+
+  it('getSkill() returns null instead of throwing on a 404', async () => {
+    server = createServer((req, res) => {
+      res.statusCode = 404;
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({ error: { code: 'NOT_FOUND', message: 'Skill not found' } }));
+    });
+    const port = await listen(server);
+    const env = createTestEnv({ MARKETPLACE_SERVICE_URL: `http://127.0.0.1:${port}` });
+
+    expect(await marketplaceClient.getSkill(env, 'missing')).toBeNull();
+  });
+
   it('PATCHes install config with organizationId and config in the body', async () => {
     let receivedBody: string | undefined;
     let receivedMethod: string | undefined;

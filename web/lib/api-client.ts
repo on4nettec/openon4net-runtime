@@ -94,9 +94,21 @@ export interface Workflow {
   description: string | null;
   definition: WorkflowDefinition;
   status: 'draft' | 'active' | 'archived';
+  trigger: { type: 'manual' } | { type: 'scheduled'; intervalMinutes: number; lastRunAt?: string } | { type: 'webhook'; webhookEndpointId: string };
   createdByUserId: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface WebhookEndpoint {
+  id: string;
+  organizationId: string;
+  name: string;
+  targetType: 'workflow' | 'agent';
+  targetId: string;
+  isActive: boolean;
+  createdAt: string;
+  lastTriggeredAt: string | null;
 }
 
 export interface WorkflowRun {
@@ -150,6 +162,7 @@ export interface MarketplacePlugin {
   installCount: number;
   avgRating: number | null;
   ratingCount: number;
+  priceCredits: number | null;
   createdAt: string;
 }
 
@@ -335,6 +348,19 @@ export async function streamChat(
   }
 }
 
+/** Client-side JSON → file download (RT-067 skill/workflow export) — the export routes return plain JSON, so this just wraps it in a Blob rather than round-tripping through a server attachment response like downloadAuditLogExport below. */
+export function downloadJson(filename: string, data: unknown): void {
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+
 /** Triggers a browser file download — request()'s JSON-only response.json() doesn't fit CSV/attachment responses, so this bypasses it with a raw fetch + blob (RT-054). */
 export async function downloadAuditLogExport(format: 'csv' | 'json'): Promise<void> {
   const session = loadSession();
@@ -386,6 +412,24 @@ export const api = {
 
   updateAgentKpis: (id: string, kpis: KpiDefinition[]) =>
     request<Agent>(`/v1/agents/${id}/kpis`, { method: 'PATCH', body: JSON.stringify({ kpis }) }),
+
+  getAgentKpiSnapshots: (id: string, kpiName: string) =>
+    request<{ value: number; recordedAt: string }[]>(`/v1/agents/${id}/kpi-snapshots?kpiName=${encodeURIComponent(kpiName)}`),
+
+  getAgentKpiOutcomes: (id: string, kpiName: string) =>
+    request<{
+      snapshots: { value: number; recordedAt: string }[];
+      insights: { kpiName: string; message: string; percentChange: number }[];
+      anomalies: { date: string; value: number; isAnomaly: boolean; zScore: number }[];
+      prediction: { predicted: number; slope: number; intercept: number } | null;
+    }>(`/v1/agents/${id}/kpi-outcomes?kpiName=${encodeURIComponent(kpiName)}`),
+
+  askInsight: (question: string) =>
+    request<{
+      answer: string;
+      intent: { metric: string; agentId: string | null; windowDays: number };
+      value: number;
+    }>('/v1/insights/ask', { method: 'POST', body: JSON.stringify({ question }) }),
 
   getLatestConversation: (agentId: string) =>
     request<{ conversation: Conversation | null; messages: Message[] }>(`/v1/agents/${agentId}/conversation`),
@@ -534,6 +578,9 @@ export const api = {
 
   deleteSkill: (id: string) => request<void>(`/v1/skills/${id}`, { method: 'DELETE' }),
 
+  exportSkill: (id: string) =>
+    request<{ name: string; description: string | null; definition: SkillDefinition }>(`/v1/skills/${id}/export`),
+
   listAgentSkillGrants: (agentId: string) => request<SkillGrant[]>(`/v1/agents/${agentId}/skills`),
 
   grantSkill: (agentId: string, skillId: string) =>
@@ -649,14 +696,29 @@ export const api = {
 
   listWorkflows: () => request<Workflow[]>('/v1/workflows'),
 
-  createWorkflow: (input: { name: string; description?: string | undefined; definition: WorkflowDefinition }) =>
+  createWorkflow: (input: {
+    name: string;
+    description?: string | undefined;
+    definition: WorkflowDefinition;
+    trigger?: { type: 'manual' } | { type: 'scheduled'; intervalMinutes: number } | undefined;
+  }) =>
     request<Workflow>('/v1/workflows', { method: 'POST', body: JSON.stringify(input) }),
 
   getWorkflow: (id: string) => request<Workflow>(`/v1/workflows/${id}`),
+
+  exportWorkflow: (id: string) =>
+    request<{ name: string; description: string | null; definition: WorkflowDefinition }>(`/v1/workflows/${id}/export`),
 
   listWorkflowRuns: (id: string) => request<WorkflowRun[]>(`/v1/workflows/${id}/runs`),
 
   runWorkflow: (id: string) => request<WorkflowRun>(`/v1/workflows/${id}/run`, { method: 'POST' }),
 
   getWorkflowRun: (id: string) => request<WorkflowRun>(`/v1/workflow-runs/${id}`),
+
+  listWebhooks: () => request<WebhookEndpoint[]>('/v1/webhooks'),
+
+  createWebhook: (input: { name: string; targetType: 'workflow' | 'agent'; targetId: string }) =>
+    request<WebhookEndpoint & { token: string }>('/v1/webhooks', { method: 'POST', body: JSON.stringify(input) }),
+
+  deleteWebhook: (id: string) => request<void>(`/v1/webhooks/${id}`, { method: 'DELETE' }),
 };

@@ -1,4 +1,4 @@
-import type { WorkflowCreateInput, WorkflowDefinition, WorkflowUpdateInput } from '@o2n/shared';
+import type { WorkflowCreateInput, WorkflowDefinition, WorkflowTrigger, WorkflowUpdateInput } from '@o2n/shared';
 import { NotFoundError } from '@o2n/governance';
 import type { Queryable } from '../db.js';
 
@@ -11,6 +11,7 @@ export interface Workflow {
   description: string | null;
   definition: WorkflowDefinition;
   status: WorkflowStatus;
+  trigger: WorkflowTrigger;
   createdByUserId: string | null;
   readonly createdAt: string;
   updatedAt: string;
@@ -23,6 +24,7 @@ interface WorkflowRow {
   description: string | null;
   definition: WorkflowDefinition;
   status: WorkflowStatus;
+  trigger: WorkflowTrigger;
   created_by_user_id: string | null;
   created_at: string;
   updated_at: string;
@@ -36,6 +38,7 @@ function toWorkflow(row: WorkflowRow): Workflow {
     description: row.description,
     definition: row.definition,
     status: row.status,
+    trigger: row.trigger,
     createdByUserId: row.created_by_user_id,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -48,10 +51,17 @@ export class WorkflowService {
 
   async create(organizationId: string, input: WorkflowCreateInput, createdByUserId: string | null): Promise<Workflow> {
     const { rows } = await this.db.query<WorkflowRow>(
-      `INSERT INTO workflows (organization_id, name, description, definition, created_by_user_id)
-       VALUES ($1, $2, $3, $4, $5)
+      `INSERT INTO workflows (organization_id, name, description, definition, trigger, created_by_user_id)
+       VALUES ($1, $2, $3, $4, $5, $6)
        RETURNING *`,
-      [organizationId, input.name, input.description ?? null, JSON.stringify(input.definition), createdByUserId],
+      [
+        organizationId,
+        input.name,
+        input.description ?? null,
+        JSON.stringify(input.definition),
+        JSON.stringify(input.trigger),
+        createdByUserId,
+      ],
     );
     const row = rows[0];
     if (!row) throw new Error('Insert did not return a row');
@@ -93,6 +103,7 @@ export class WorkflowService {
     if (input.description !== undefined) set('description', input.description);
     if (input.definition !== undefined) set('definition', JSON.stringify(input.definition));
     if (input.status !== undefined) set('status', input.status);
+    if (input.trigger !== undefined) set('trigger', JSON.stringify(input.trigger));
     set('updated_at', new Date().toISOString());
 
     values.push(workflowId, organizationId);

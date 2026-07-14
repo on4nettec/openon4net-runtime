@@ -11,6 +11,10 @@ import { AgentAccessService, assertValidAccessRole } from '../services/agent-acc
 import { AuditService } from '../services/audit-service.js';
 import { MemoryService } from '../services/memory-service.js';
 import { WorkspaceService } from '../services/workspace-service.js';
+import { listKpiSnapshots } from '../services/kpi-computation-service.js';
+import { generateInsights } from '../services/insight-generator.js';
+import { detectAnomalies } from '../services/anomaly-detector.js';
+import { predictNext } from '../services/trend-predictor.js';
 
 export function registerAgentRoutes(app: FastifyInstance, ctx: AppContext): void {
   const agentService = new AgentService(ctx.db);
@@ -118,6 +122,37 @@ export function registerAgentRoutes(app: FastifyInstance, ctx: AppContext): void
       });
       return agent;
     });
+  });
+
+  app.get<{ Params: { id: string }; Querystring: { kpiName?: string } }>('/v1/agents/:id/kpi-snapshots', async (request) => {
+    requirePermission(request, 'agents:read');
+    await requireAgentAccessible(ctx, request, request.params.id);
+    if (!request.query.kpiName) throw new ValidationError('kpiName query parameter is required');
+    await agentService.getById(request.auth.organizationId, request.params.id); // org-scope check, 404s otherwise
+    return listKpiSnapshots(ctx.db, request.params.id, request.query.kpiName);
+  });
+
+  /**
+   * RT-059/060/062/063 — the Outcomes dashboard's single data source per
+   * KPI: raw snapshots + everything derived from them (insights, anomaly
+   * flags, next-period prediction). Folded into one route instead of three
+   * separate ones (insights/anomalies/prediction) since all three are pure
+   * functions over the exact same snapshot array the dashboard already
+   * needs — a real API surface for each would just mean the client re-fetches
+   * the same data three times.
+   */
+  app.get<{ Params: { id: string }; Querystring: { kpiName?: string } }>('/v1/agents/:id/kpi-outcomes', async (request) => {
+    requirePermission(request, 'agents:read');
+    await requireAgentAccessible(ctx, request, request.params.id);
+    if (!request.query.kpiName) throw new ValidationError('kpiName query parameter is required');
+    await agentService.getById(request.auth.organizationId, request.params.id);
+
+    const snapshots = await listKpiSnapshots(ctx.db, request.params.id, request.query.kpiName);
+    const insights = generateInsights(request.query.kpiName, snapshots);
+    const anomalies = detectAnomalies(snapshots.map((s) => ({ date: s.recordedAt, value: s.value })));
+    const prediction = predictNext(snapshots.map((s, i) => ({ x: i, y: s.value })));
+
+    return { snapshots, insights, anomalies, prediction };
   });
 
   app.post<{ Params: { id: string } }>('/v1/agents/:id/pause', async (request) => {

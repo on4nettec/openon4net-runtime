@@ -3,7 +3,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { api, loadSession, ApiError, type Skill, type SkillStep } from '@/lib/api-client';
+import { api, loadSession, ApiError, downloadJson, type Skill, type SkillStep } from '@/lib/api-client';
 import type { Agent } from '@o2n/shared';
 
 type ToolType = SkillStep['tool'];
@@ -27,6 +27,8 @@ export default function SkillsPage() {
   const [message, setMessage] = useState('');
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
+  const [rawJsonMode, setRawJsonMode] = useState(false);
+  const [rawJsonText, setRawJsonText] = useState('');
 
   function loadSkills() {
     return api
@@ -103,6 +105,16 @@ export default function SkillsPage() {
     }
   }
 
+  async function handleExport(skill: Skill) {
+    setError(null);
+    try {
+      const exported = await api.exportSkill(skill.id);
+      downloadJson(`${skill.name.replace(/\s+/g, '-').toLowerCase()}.json`, exported);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Failed to export skill');
+    }
+  }
+
   async function handleDelete(skill: Skill) {
     if (!window.confirm(`Delete skill "${skill.name}"?`)) return;
     setBusyId(skill.id);
@@ -122,25 +134,42 @@ export default function SkillsPage() {
     setCreating(true);
     setCreateError(null);
     try {
-      const step: SkillStep =
-        toolType === 'webhook-send'
-          ? { id: 'step-1', type: 'tool', tool: 'webhook-send', params: { url, payload: {} } }
-          : { id: 'step-1', type: 'tool', tool: 'telegram-send', params: { chatId, message } };
+      if (rawJsonMode) {
+        const parsed = JSON.parse(rawJsonText) as { name: string; description?: string | null; definition: Skill['definition'] };
+        await api.createSkill({
+          agentId: creatorAgentId,
+          name: parsed.name,
+          ...(parsed.description ? { description: parsed.description } : {}),
+          definition: parsed.definition,
+        });
+        setRawJsonText('');
+      } else {
+        const step: SkillStep =
+          toolType === 'webhook-send'
+            ? { id: 'step-1', type: 'tool', tool: 'webhook-send', params: { url, payload: {} } }
+            : { id: 'step-1', type: 'tool', tool: 'telegram-send', params: { chatId, message } };
 
-      await api.createSkill({
-        agentId: creatorAgentId,
-        name,
-        ...(description ? { description } : {}),
-        definition: { trigger: { type: 'manual' }, steps: [step] },
-      });
-      setName('');
-      setDescription('');
-      setUrl('');
-      setChatId('');
-      setMessage('');
+        await api.createSkill({
+          agentId: creatorAgentId,
+          name,
+          ...(description ? { description } : {}),
+          definition: { trigger: { type: 'manual' }, steps: [step] },
+        });
+        setName('');
+        setDescription('');
+        setUrl('');
+        setChatId('');
+        setMessage('');
+      }
       await loadSkills();
     } catch (err) {
-      setCreateError(err instanceof ApiError ? err.message : 'Failed to create skill');
+      setCreateError(
+        err instanceof ApiError
+          ? err.message
+          : err instanceof SyntaxError
+            ? `Invalid JSON: ${err.message}`
+            : 'Failed to create skill',
+      );
     } finally {
       setCreating(false);
     }
@@ -222,6 +251,9 @@ export default function SkillsPage() {
                             <button className="secondary" disabled={busy || !granted} onClick={() => handleExecute(skill)}>
                               Execute
                             </button>
+                            <button className="secondary" disabled={busy} onClick={() => handleExport(skill)}>
+                              Export
+                            </button>
                             <button className="secondary" disabled={busy} onClick={() => handleDelete(skill)}>
                               Delete
                             </button>
@@ -239,14 +271,6 @@ export default function SkillsPage() {
               <form onSubmit={handleCreate} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                 {createError ? <div className="error">{createError}</div> : null}
                 <label>
-                  Name
-                  <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Send status webhook" required />
-                </label>
-                <label>
-                  Description
-                  <input value={description} onChange={(e) => setDescription(e.target.value)} />
-                </label>
-                <label>
                   Owning agent
                   <select value={creatorAgentId} onChange={(e) => setCreatorAgentId(e.target.value)}>
                     {agents.map((a) => (
@@ -256,29 +280,61 @@ export default function SkillsPage() {
                     ))}
                   </select>
                 </label>
-                <label>
-                  Step type
-                  <select value={toolType} onChange={(e) => setToolType(e.target.value as ToolType)}>
-                    <option value="webhook-send">Webhook</option>
-                    <option value="telegram-send">Telegram message</option>
-                  </select>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <input type="checkbox" checked={rawJsonMode} onChange={(e) => setRawJsonMode(e.target.checked)} />
+                  Import from JSON (paste an exported {'{name, description, definition}'} blob)
                 </label>
-                {toolType === 'webhook-send' ? (
+                {rawJsonMode ? (
                   <label>
-                    URL
-                    <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://..." required />
+                    Skill JSON
+                    <textarea
+                      value={rawJsonText}
+                      onChange={(e) => setRawJsonText(e.target.value)}
+                      rows={12}
+                      style={{ fontFamily: 'monospace', fontSize: 13, width: '100%' }}
+                      required
+                    />
                   </label>
                 ) : (
-                  <div style={{ display: 'flex', gap: 10 }}>
-                    <label style={{ flex: 1 }}>
-                      Chat ID
-                      <input value={chatId} onChange={(e) => setChatId(e.target.value)} required />
+                  <>
+                    <label>
+                      Name
+                      <input
+                        value={name}
+                        onChange={(e) => setName(e.target.value)}
+                        placeholder="e.g. Send status webhook"
+                        required
+                      />
                     </label>
-                    <label style={{ flex: 2 }}>
-                      Message
-                      <input value={message} onChange={(e) => setMessage(e.target.value)} required />
+                    <label>
+                      Description
+                      <input value={description} onChange={(e) => setDescription(e.target.value)} />
                     </label>
-                  </div>
+                    <label>
+                      Step type
+                      <select value={toolType} onChange={(e) => setToolType(e.target.value as ToolType)}>
+                        <option value="webhook-send">Webhook</option>
+                        <option value="telegram-send">Telegram message</option>
+                      </select>
+                    </label>
+                    {toolType === 'webhook-send' ? (
+                      <label>
+                        URL
+                        <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://..." required />
+                      </label>
+                    ) : (
+                      <div style={{ display: 'flex', gap: 10 }}>
+                        <label style={{ flex: 1 }}>
+                          Chat ID
+                          <input value={chatId} onChange={(e) => setChatId(e.target.value)} required />
+                        </label>
+                        <label style={{ flex: 2 }}>
+                          Message
+                          <input value={message} onChange={(e) => setMessage(e.target.value)} required />
+                        </label>
+                      </div>
+                    )}
+                  </>
                 )}
                 <button type="submit" disabled={creating}>
                   {creating ? 'Creating…' : 'Create skill'}

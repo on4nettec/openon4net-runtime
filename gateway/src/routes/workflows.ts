@@ -8,7 +8,7 @@ import { WorkflowRunService } from '../services/workflow-run-service.js';
 import { WorkflowExecutor } from '../services/workflow-executor.js';
 import { AuditService } from '../services/audit-service.js';
 
-/** Roadmap item 17 (Agent Teams, weeks 31-32) — v1 DAG workflow engine. Manual trigger only, see packages/shared/src/schemas/workflow.ts. */
+/** Roadmap item 17 (Agent Teams, weeks 31-32) — v1 DAG workflow engine. Manual/scheduled/webhook triggers, see packages/shared/src/schemas/workflow.ts and RT-066. */
 export function registerWorkflowRoutes(app: FastifyInstance, ctx: AppContext): void {
   const workflowService = new WorkflowService(ctx.db);
   const workflowRunService = new WorkflowRunService(ctx.db);
@@ -36,6 +36,14 @@ export function registerWorkflowRoutes(app: FastifyInstance, ctx: AppContext): v
   app.get<{ Params: { id: string } }>('/v1/workflows/:id', async (request) => {
     requirePermission(request, 'workflows:read');
     return workflowService.getById(request.auth.organizationId, request.params.id);
+  });
+
+  // RT-067: portable subset only — no org-specific id/status/trigger.
+  // "Import" is just POSTing this shape to POST /v1/workflows.
+  app.get<{ Params: { id: string } }>('/v1/workflows/:id/export', async (request) => {
+    requirePermission(request, 'workflows:read');
+    const workflow = await workflowService.getById(request.auth.organizationId, request.params.id);
+    return { name: workflow.name, description: workflow.description, definition: workflow.definition };
   });
 
   app.patch<{ Params: { id: string } }>('/v1/workflows/:id', async (request) => {

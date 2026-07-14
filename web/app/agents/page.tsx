@@ -230,8 +230,16 @@ export default function AgentsPage() {
     setKpiDrafts((prev) => prev.map((k, i) => (i === index ? { ...k, [field]: value } : k)));
   }
 
+  function updateKpiMetricType(index: number, metricType: KpiDefinition['metricType']) {
+    setKpiDrafts((prev) => prev.map((k, i) => (i === index ? { ...k, metricType } : k)));
+  }
+
+  function updateKpiWindowDays(index: number, windowDays: number) {
+    setKpiDrafts((prev) => prev.map((k, i) => (i === index ? { ...k, windowDays } : k)));
+  }
+
   function addKpiDraft() {
-    setKpiDrafts((prev) => [...prev, { name: '', target: '' }]);
+    setKpiDrafts((prev) => [...prev, { name: '', target: '', metricType: 'manual', windowDays: 7 }]);
   }
 
   function removeKpiDraft(index: number) {
@@ -279,6 +287,7 @@ export default function AgentsPage() {
           <Link href="/marketplace">Marketplace</Link>
           <Link href="/approvals">Approvals</Link>
           <Link href="/workflows">Workflows</Link>
+          <Link href="/outcomes">Outcomes</Link>
           <Link href="/settings">Settings</Link>
           <button className="secondary" onClick={handleLogout}>
             Sign out
@@ -477,28 +486,56 @@ export default function AgentsPage() {
                         Targets set here; current values can be updated via the same form or the API as work progresses.
                       </div>
                       {kpiDrafts.map((kpi, i) => (
-                        <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                          <input
-                            placeholder="KPI name"
-                            value={kpi.name}
-                            onChange={(e) => updateKpiDraft(i, 'name', e.target.value)}
-                            style={{ flex: 2 }}
-                          />
-                          <input
-                            placeholder="Target"
-                            value={String(kpi.target)}
-                            onChange={(e) => updateKpiDraft(i, 'target', e.target.value)}
-                            style={{ flex: 1 }}
-                          />
-                          <input
-                            placeholder="Current"
-                            value={kpi.current !== undefined ? String(kpi.current) : ''}
-                            onChange={(e) => updateKpiDraft(i, 'current', e.target.value)}
-                            style={{ flex: 1 }}
-                          />
-                          <button className="secondary" onClick={() => removeKpiDraft(i)}>
-                            Remove
-                          </button>
+                        <div key={i} style={{ display: 'flex', flexDirection: 'column', gap: 6, paddingBottom: 8, borderBottom: '1px solid #2c3038' }}>
+                          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                            <input
+                              placeholder="KPI name"
+                              value={kpi.name}
+                              onChange={(e) => updateKpiDraft(i, 'name', e.target.value)}
+                              style={{ flex: 2 }}
+                            />
+                            <input
+                              placeholder="Target"
+                              value={String(kpi.target)}
+                              onChange={(e) => updateKpiDraft(i, 'target', e.target.value)}
+                              style={{ flex: 1 }}
+                            />
+                            <input
+                              placeholder="Current"
+                              value={kpi.current !== undefined ? String(kpi.current) : ''}
+                              disabled={kpi.metricType !== 'manual'}
+                              onChange={(e) => updateKpiDraft(i, 'current', e.target.value)}
+                              style={{ flex: 1 }}
+                            />
+                            <button className="secondary" onClick={() => removeKpiDraft(i)}>
+                              Remove
+                            </button>
+                          </div>
+                          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                            <span style={{ fontSize: 11, color: '#9aa0aa' }}>Auto-compute from:</span>
+                            <select
+                              value={kpi.metricType}
+                              onChange={(e) => updateKpiMetricType(i, e.target.value as KpiDefinition['metricType'])}
+                            >
+                              <option value="manual">Manual (admin-set)</option>
+                              <option value="action_count">Action count</option>
+                              <option value="cost_cents">Cost (cents)</option>
+                              <option value="success_rate">Success rate (%)</option>
+                            </select>
+                            {kpi.metricType !== 'manual' ? (
+                              <>
+                                <span style={{ fontSize: 11, color: '#9aa0aa' }}>over trailing</span>
+                                <input
+                                  type="number"
+                                  min={1}
+                                  value={kpi.windowDays}
+                                  onChange={(e) => updateKpiWindowDays(i, Number(e.target.value))}
+                                  style={{ width: 60 }}
+                                />
+                                <span style={{ fontSize: 11, color: '#9aa0aa' }}>days, updated once daily</span>
+                              </>
+                            ) : null}
+                          </div>
                         </div>
                       ))}
                       <div style={{ display: 'flex', gap: 8 }}>

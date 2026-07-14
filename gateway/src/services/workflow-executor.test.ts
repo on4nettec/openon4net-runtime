@@ -48,7 +48,7 @@ describe('WorkflowExecutor', () => {
 
       const workflow = await workflowService.create(
         fixture.organizationId,
-        { name: 'Sequential', definition: { steps: [webhookStep('step-1'), webhookStep('step-2')] } },
+        { name: 'Sequential', trigger: { type: 'manual' }, definition: { steps: [webhookStep('step-1'), webhookStep('step-2')] } },
         fixture.userId,
       );
 
@@ -71,6 +71,7 @@ describe('WorkflowExecutor', () => {
         fixture.organizationId,
         {
           name: 'Branching',
+          trigger: { type: 'manual' },
           definition: {
             steps: [
               webhookStep('step-0'),
@@ -110,6 +111,7 @@ describe('WorkflowExecutor', () => {
         fixture.organizationId,
         {
           name: 'Parallel',
+          trigger: { type: 'manual' },
           definition: {
             steps: [{ id: 'par', type: 'parallel', steps: [webhookStep('sub-1'), webhookStep('sub-2')] }],
           },
@@ -133,7 +135,7 @@ describe('WorkflowExecutor', () => {
 
     const workflow = await workflowService.create(
       fixture.organizationId,
-      { name: 'Needs approval', definition: { steps: [{ id: 'h1', type: 'human', reason: 'needs review' }] } },
+      { name: 'Needs approval', trigger: { type: 'manual' }, definition: { steps: [{ id: 'h1', type: 'human', reason: 'needs review' }] } },
       fixture.userId,
     );
 
@@ -157,7 +159,11 @@ describe('WorkflowExecutor', () => {
 
     const workflow = await workflowService.create(
       fixture.organizationId,
-      { name: 'Needs approval (rejected)', definition: { steps: [{ id: 'h1', type: 'human', reason: 'needs review' }] } },
+      {
+        name: 'Needs approval (rejected)',
+        trigger: { type: 'manual' },
+        definition: { steps: [{ id: 'h1', type: 'human', reason: 'needs review' }] },
+      },
       fixture.userId,
     );
 
@@ -179,6 +185,7 @@ describe('WorkflowExecutor', () => {
       fixture.organizationId,
       {
         name: 'Unroutable agent step',
+        trigger: { type: 'manual' },
         definition: {
           steps: [{ id: 'a1', type: 'agent', agentRole: 'nonexistent-role', prompt: 'do something' }],
         },
