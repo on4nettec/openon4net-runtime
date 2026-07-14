@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { AgentCreateSchema, AgentUpdateSchema } from '@o2n/shared';
+import { AgentCreateSchema, AgentKpisUpdateSchema, AgentUpdateSchema } from '@o2n/shared';
 import { ValidationError } from '@o2n/governance';
 import type { AppContext } from '../context.js';
 import { withTransaction } from '../db.js';
@@ -81,6 +81,40 @@ export function registerAgentRoutes(app: FastifyInstance, ctx: AppContext): void
         userId: request.auth.userId,
         actionType: 'agent-update',
         actionData: { traceId: request.traceId, changes: parsed.data },
+      });
+      return agent;
+    });
+  });
+
+  // Direct reports + transitive team (roadmap items 13/18 — "team" is just the reports_to subtree, no separate table).
+  app.get<{ Params: { id: string } }>('/v1/agents/:id/reports', async (request) => {
+    requirePermission(request, 'agents:read');
+    await requireAgentAccessible(ctx, request, request.params.id);
+    await agentService.getById(request.auth.organizationId, request.params.id); // org-scope check, 404s otherwise
+    return agentService.listReports(request.auth.organizationId, request.params.id);
+  });
+
+  app.get<{ Params: { id: string } }>('/v1/agents/:id/team', async (request) => {
+    requirePermission(request, 'agents:read');
+    await requireAgentAccessible(ctx, request, request.params.id);
+    await agentService.getById(request.auth.organizationId, request.params.id); // org-scope check, 404s otherwise
+    return agentService.listTeam(request.auth.organizationId, request.params.id);
+  });
+
+  app.patch<{ Params: { id: string } }>('/v1/agents/:id/kpis', async (request) => {
+    requirePermission(request, 'agents:update');
+    await requireAgentAccessible(ctx, request, request.params.id);
+    const parsed = AgentKpisUpdateSchema.safeParse(request.body);
+    if (!parsed.success) throw new ValidationError('Invalid KPI payload', parsed.error.flatten());
+
+    return withTransaction(ctx.db, async (client) => {
+      const agent = await new AgentService(client).updateKpis(request.auth.organizationId, request.params.id, parsed.data.kpis);
+      await new AuditService(client).logAction({
+        organizationId: request.auth.organizationId,
+        agentId: agent.id,
+        userId: request.auth.userId,
+        actionType: 'agent-kpis-update',
+        actionData: { traceId: request.traceId, kpis: parsed.data.kpis },
       });
       return agent;
     });

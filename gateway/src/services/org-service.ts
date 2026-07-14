@@ -78,16 +78,24 @@ export class OrgService {
     return toOrganization(row);
   }
 
-  /** `plan`/`status` are deliberately not editable here — those are Control-Plane's job (activation/billing), not a self-service Runtime setting. */
+  /**
+   * `plan`/`status` are deliberately not editable here — those are
+   * Control-Plane's job (activation/billing), not a self-service Runtime
+   * setting. `settings` is a JSONB *merge* (`||`), not a wholesale replace —
+   * several independent features now each own one key under it
+   * (publisherSlug/publisherDisplayName for MKT-022, auditRetentionDays/
+   * auditChainGenesis for RT-054/055), so one feature's partial update must
+   * not clobber another's key.
+   */
   async update(organizationId: string, input: OrganizationUpdateInput): Promise<Organization> {
     const { rows } = await this.db.query<OrgRow>(
       `UPDATE organizations
        SET name = COALESCE($1, name),
-           settings = COALESCE($2, settings),
+           settings = settings || $2::jsonb,
            updated_at = NOW()
        WHERE id = $3
        RETURNING *`,
-      [input.name ?? null, input.settings ? JSON.stringify(input.settings) : null, organizationId],
+      [input.name ?? null, JSON.stringify(input.settings ?? {}), organizationId],
     );
     const row = rows[0];
     if (!row) throw new NotFoundError('Organization', organizationId);

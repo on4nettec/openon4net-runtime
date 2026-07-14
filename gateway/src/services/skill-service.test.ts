@@ -106,4 +106,78 @@ describe('SkillService', () => {
     expect(refreshed.successRate).toBe(50);
     expect(refreshed.avgDurationMs).toBe(200);
   });
+
+  it('update() bumps version when definition changes, leaves it alone otherwise (RT-049)', async () => {
+    const fixture = await withFixture();
+    const skillService = new SkillService(db);
+
+    const skill = await skillService.create(fixture.organizationId, {
+      agentId: fixture.agentId,
+      name: 'Versioned skill',
+      definition: {
+        trigger: { type: 'manual' },
+        steps: [{ id: 'step-1', type: 'tool', tool: 'webhook-send', params: { url: 'https://example.com', payload: {} } }],
+      },
+    });
+    expect(skill.version).toBe('1.0.0');
+
+    const renamed = await skillService.update(fixture.organizationId, skill.id, { name: 'Renamed, same behavior' });
+    expect(renamed.version).toBe('1.0.0');
+
+    const redefined = await skillService.update(fixture.organizationId, skill.id, {
+      definition: {
+        trigger: { type: 'manual' },
+        steps: [{ id: 'step-1', type: 'tool', tool: 'webhook-send', params: { url: 'https://example.com/v2', payload: {} } }],
+      },
+    });
+    expect(redefined.version).toBe('1.0.1');
+  });
+
+  it('fork() creates a new skill with a fresh id and reset version 1.0.0 (RT-049)', async () => {
+    const fixture = await withFixture();
+    const skillService = new SkillService(db);
+
+    const source = await skillService.create(fixture.organizationId, {
+      agentId: fixture.agentId,
+      name: 'Original skill',
+      description: 'the source',
+      definition: {
+        trigger: { type: 'manual' },
+        steps: [{ id: 'step-1', type: 'tool', tool: 'webhook-send', params: { url: 'https://example.com', payload: {} } }],
+      },
+    });
+    await skillService.update(fixture.organizationId, source.id, {
+      definition: {
+        trigger: { type: 'manual' },
+        steps: [{ id: 'step-1', type: 'tool', tool: 'webhook-send', params: { url: 'https://example.com/v2', payload: {} } }],
+      },
+    });
+
+    const forked = await skillService.fork(fixture.organizationId, source.id);
+    expect(forked.id).not.toBe(source.id);
+    expect(forked.name).toBe('Original skill (fork)');
+    expect(forked.version).toBe('1.0.0');
+    expect(forked.executionCount).toBe(0);
+    expect(forked.definition).toEqual({
+      trigger: { type: 'manual' },
+      steps: [{ id: 'step-1', type: 'tool', tool: 'webhook-send', params: { url: 'https://example.com/v2', payload: {} } }],
+    });
+  });
+
+  it('fork() accepts a custom name', async () => {
+    const fixture = await withFixture();
+    const skillService = new SkillService(db);
+
+    const source = await skillService.create(fixture.organizationId, {
+      agentId: fixture.agentId,
+      name: 'Original skill',
+      definition: {
+        trigger: { type: 'manual' },
+        steps: [{ id: 'step-1', type: 'tool', tool: 'webhook-send', params: { url: 'https://example.com', payload: {} } }],
+      },
+    });
+
+    const forked = await skillService.fork(fixture.organizationId, source.id, 'My custom fork');
+    expect(forked.name).toBe('My custom fork');
+  });
 });

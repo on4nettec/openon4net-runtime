@@ -19,9 +19,16 @@ export default function MarketplacePage() {
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [installedPluginIds, setInstalledPluginIds] = useState<Set<string>>(new Set());
+  const [installedSkillIds, setInstalledSkillIds] = useState<Set<string>>(new Set());
   const [installIds, setInstallIds] = useState<Record<string, string>>({});
   const [configDrafts, setConfigDrafts] = useState<Record<string, Record<string, string>>>({});
   const [configStatus, setConfigStatus] = useState<Record<string, string>>({});
+  const [ratingDrafts, setRatingDrafts] = useState<Record<string, number>>({});
+  const [ratingStatus, setRatingStatus] = useState<Record<string, string>>({});
+
+  function formatRating(avgRating: number | null, ratingCount: number): string {
+    return avgRating !== null ? `★ ${avgRating.toFixed(1)} (${ratingCount})` : 'No ratings yet';
+  }
 
   function loadMarketplace() {
     setError(null);
@@ -43,15 +50,24 @@ export default function MarketplacePage() {
     void loadMarketplace();
   }, [router]);
 
-  async function handleInstallPlugin(plugin: MarketplacePlugin) {
+  async function handleInstallPlugin(plugin: MarketplacePlugin, acknowledgePermissionDiff = false) {
     setBusyId(plugin.pluginId);
     setError(null);
     try {
-      const result = await api.installMarketplacePlugin(plugin.pluginId);
+      const result = await api.installMarketplacePlugin(plugin.pluginId, { acknowledgePermissionDiff });
       setInstalledPluginIds((prev) => new Set(prev).add(plugin.pluginId));
       setInstallIds((prev) => ({ ...prev, [plugin.pluginId]: result.installId }));
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Failed to install plugin');
+      if (err instanceof ApiError && err.code === 'PERMISSION_DIFF_REQUIRED') {
+        const confirmed = window.confirm(`${err.message}\n\nInstall anyway?`);
+        if (confirmed) {
+          setBusyId(null);
+          await handleInstallPlugin(plugin, true);
+          return;
+        }
+      } else {
+        setError(err instanceof ApiError ? err.message : 'Failed to install plugin');
+      }
     } finally {
       setBusyId(null);
     }
@@ -62,11 +78,38 @@ export default function MarketplacePage() {
     setError(null);
     try {
       await api.installMarketplaceSkill(skill.skillId);
+      setInstalledSkillIds((prev) => new Set(prev).add(skill.skillId));
       window.alert(`Installed "${skill.name}" — find it under Skills.`);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to install skill');
     } finally {
       setBusyId(null);
+    }
+  }
+
+  async function handleRatePlugin(pluginId: string) {
+    const rating = ratingDrafts[pluginId];
+    if (!rating) return;
+    setRatingStatus((prev) => ({ ...prev, [pluginId]: 'saving' }));
+    try {
+      await api.rateMarketplacePlugin(pluginId, rating);
+      setRatingStatus((prev) => ({ ...prev, [pluginId]: 'saved' }));
+      await loadMarketplace();
+    } catch (err) {
+      setRatingStatus((prev) => ({ ...prev, [pluginId]: err instanceof ApiError ? err.message : 'Failed to rate' }));
+    }
+  }
+
+  async function handleRateSkill(skillId: string) {
+    const rating = ratingDrafts[skillId];
+    if (!rating) return;
+    setRatingStatus((prev) => ({ ...prev, [skillId]: 'saving' }));
+    try {
+      await api.rateMarketplaceSkill(skillId, rating);
+      setRatingStatus((prev) => ({ ...prev, [skillId]: 'saved' }));
+      await loadMarketplace();
+    } catch (err) {
+      setRatingStatus((prev) => ({ ...prev, [skillId]: err instanceof ApiError ? err.message : 'Failed to rate' }));
     }
   }
 
@@ -101,6 +144,7 @@ export default function MarketplacePage() {
           <Link href="/skills">Skills</Link>
           <Link href="/skill-proposals">Skill Proposals</Link>
           <strong>Marketplace</strong>
+          <Link href="/workflows">Workflows</Link>
           <Link href="/policies">Policies</Link>
           <Link href="/settings">Settings</Link>
         </nav>
@@ -109,7 +153,8 @@ export default function MarketplacePage() {
       <div className="page">
         <h1 style={{ fontSize: 20 }}>Marketplace</h1>
         <p style={{ color: '#9aa0aa', fontSize: 14 }}>
-          Browse Skills and Plugins published by the community. Installing requires an activated Runtime.
+          Browse Skills and Plugins published by the community. Installing requires an activated Runtime.{' '}
+          <Link href="/marketplace/publisher">Publish your own →</Link>
         </p>
 
         {error ? <div className="error">{error}</div> : null}
@@ -129,33 +174,66 @@ export default function MarketplacePage() {
                       <th style={{ paddingBottom: 8 }}>Name</th>
                       <th style={{ paddingBottom: 8 }}>Publisher</th>
                       <th style={{ paddingBottom: 8 }}>Price</th>
+                      <th style={{ paddingBottom: 8 }}>Downloads</th>
+                      <th style={{ paddingBottom: 8 }}>Rating</th>
                       <th style={{ paddingBottom: 8 }}></th>
                     </tr>
                   </thead>
                   <tbody>
-                    {skills.map((skill) => (
-                      <tr key={skill.skillId} style={{ borderTop: '1px solid #2c3038' }}>
-                        <td style={{ padding: '8px 0' }}>
-                          {skill.name}
-                          {skill.description ? (
-                            <div style={{ color: '#9aa0aa', fontSize: 12 }}>{skill.description}</div>
-                          ) : null}
-                        </td>
-                        <td style={{ padding: '8px 0', color: '#9aa0aa' }}>{skill.publisherSlug}</td>
-                        <td style={{ padding: '8px 0' }}>
-                          {skill.priceCents === 0 ? 'Free' : `$${(skill.priceCents / 100).toFixed(2)}`}
-                        </td>
-                        <td style={{ padding: '8px 0' }}>
-                          <button
-                            className="secondary"
-                            disabled={busyId === skill.skillId}
-                            onClick={() => handleInstallSkill(skill)}
-                          >
-                            Install
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
+                    {skills.map((skill) => {
+                      const skillInstalled = installedSkillIds.has(skill.skillId);
+                      return (
+                        <tr key={skill.skillId} style={{ borderTop: '1px solid #2c3038' }}>
+                          <td style={{ padding: '8px 0' }}>
+                            {skill.name}
+                            {skill.description ? (
+                              <div style={{ color: '#9aa0aa', fontSize: 12 }}>{skill.description}</div>
+                            ) : null}
+                          </td>
+                          <td style={{ padding: '8px 0', color: '#9aa0aa' }}>{skill.publisherSlug}</td>
+                          <td style={{ padding: '8px 0' }}>
+                            {skill.priceCents === 0 ? 'Free' : `$${(skill.priceCents / 100).toFixed(2)}`}
+                          </td>
+                          <td style={{ padding: '8px 0', color: '#9aa0aa' }}>{skill.installCount}</td>
+                          <td style={{ padding: '8px 0', color: '#9aa0aa' }}>
+                            {formatRating(skill.avgRating, skill.ratingCount)}
+                          </td>
+                          <td style={{ padding: '8px 0' }}>
+                            {skillInstalled ? (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                <select
+                                  value={ratingDrafts[skill.skillId] ?? ''}
+                                  onChange={(e) =>
+                                    setRatingDrafts((prev) => ({ ...prev, [skill.skillId]: Number(e.target.value) }))
+                                  }
+                                >
+                                  <option value="">Rate…</option>
+                                  {[1, 2, 3, 4, 5].map((n) => (
+                                    <option key={n} value={n}>
+                                      {n}
+                                    </option>
+                                  ))}
+                                </select>
+                                <button className="secondary" onClick={() => handleRateSkill(skill.skillId)}>
+                                  Submit
+                                </button>
+                                {ratingStatus[skill.skillId] ? (
+                                  <span style={{ fontSize: 12, color: '#9aa0aa' }}>{ratingStatus[skill.skillId]}</span>
+                                ) : null}
+                              </div>
+                            ) : (
+                              <button
+                                className="secondary"
+                                disabled={busyId === skill.skillId}
+                                onClick={() => handleInstallSkill(skill)}
+                              >
+                                Install
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               )}
@@ -182,6 +260,14 @@ export default function MarketplacePage() {
                             {plugin.description ? (
                               <div style={{ color: '#9aa0aa', fontSize: 12 }}>{plugin.description}</div>
                             ) : null}
+                            {plugin.permissions.length > 0 ? (
+                              <div style={{ color: '#9aa0aa', fontSize: 12 }}>
+                                Wants access to: {plugin.permissions.join(', ')}
+                              </div>
+                            ) : null}
+                            <div style={{ color: '#9aa0aa', fontSize: 12 }}>
+                              {plugin.installCount} installs · {formatRating(plugin.avgRating, plugin.ratingCount)}
+                            </div>
                           </div>
                           <button
                             className="secondary"
@@ -191,6 +277,30 @@ export default function MarketplacePage() {
                             {installed ? 'Installed' : 'Install'}
                           </button>
                         </div>
+
+                        {installed ? (
+                          <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <select
+                              value={ratingDrafts[plugin.pluginId] ?? ''}
+                              onChange={(e) =>
+                                setRatingDrafts((prev) => ({ ...prev, [plugin.pluginId]: Number(e.target.value) }))
+                              }
+                            >
+                              <option value="">Rate…</option>
+                              {[1, 2, 3, 4, 5].map((n) => (
+                                <option key={n} value={n}>
+                                  {n}
+                                </option>
+                              ))}
+                            </select>
+                            <button className="secondary" onClick={() => handleRatePlugin(plugin.pluginId)}>
+                              Submit
+                            </button>
+                            {ratingStatus[plugin.pluginId] ? (
+                              <span style={{ fontSize: 12, color: '#9aa0aa' }}>{ratingStatus[plugin.pluginId]}</span>
+                            ) : null}
+                          </div>
+                        ) : null}
 
                         {installed && configSchema.length > 0 ? (
                           <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 8 }}>

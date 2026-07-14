@@ -7,6 +7,7 @@ import { httpRequestDurationSeconds, httpRequestsTotal } from './observability/m
 import { registerHealthRoute } from './routes/health.js';
 import { registerMetricsRoute } from './routes/metrics.js';
 import { registerAgentRoutes } from './routes/agents.js';
+import { registerAgentMessageRoutes } from './routes/agent-messages.js';
 import { registerMemoryRoutes } from './routes/memory.js';
 import { registerChatRoutes } from './routes/chat.js';
 import { registerAuthMethods } from './auth/registry.js';
@@ -25,6 +26,7 @@ import { registerOrganizationRoutes } from './routes/organizations.js';
 import { registerInvitationRoutes } from './routes/invitations.js';
 import { registerAuthInvitationRoutes } from './routes/auth-invitations.js';
 import { registerWalletRoutes } from './routes/wallet.js';
+import { registerWorkflowRoutes } from './routes/workflows.js';
 
 export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
   const app = Fastify({ logger: true });
@@ -44,6 +46,7 @@ export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
   registerAuth(app, ctx.env.JWT_SECRET, ctx.permissionService);
   registerAuthMethods(app, ctx);
   registerAgentRoutes(app, ctx);
+  registerAgentMessageRoutes(app, ctx);
   registerMemoryRoutes(app, ctx);
   registerChatRoutes(app, ctx);
   registerConfigRoutes(app, ctx);
@@ -61,6 +64,7 @@ export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
   registerInvitationRoutes(app, ctx);
   registerAuthInvitationRoutes(app, ctx);
   registerWalletRoutes(app, ctx);
+  registerWorkflowRoutes(app, ctx);
 
   return app;
 }

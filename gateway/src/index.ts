@@ -12,6 +12,8 @@ import { startSkillProposalScheduler } from './services/skill-proposal-scheduler
 import { ActivationState } from './services/activation-state.js';
 import { startActivationScheduler } from './services/activation-scheduler.js';
 import { startApprovalExpiryScheduler } from './services/approval-expiry-scheduler.js';
+import { startAgentMessageScheduler } from './services/agent-message-scheduler.js';
+import { startAuditRetentionScheduler } from './services/audit-retention-scheduler.js';
 import type { AppContext } from './context.js';
 
 async function main(): Promise<void> {
@@ -43,6 +45,8 @@ async function main(): Promise<void> {
   startSkillProposalScheduler(ctx);
   startActivationScheduler(ctx);
   startApprovalExpiryScheduler(ctx);
+  startAgentMessageScheduler(ctx);
+  startAuditRetentionScheduler(ctx);
 
   await app.listen({ port: env.PORT, host: '0.0.0.0' });
 }

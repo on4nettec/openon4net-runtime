@@ -7,12 +7,46 @@ import { requireAgentAccessible } from '../lib/agent-access.js';
 import { listTools } from '../services/tool-registry.js';
 import { AgentService } from '../services/agent-service.js';
 import { AuditService } from '../services/audit-service.js';
+import { ApprovalService } from '../services/approval-service.js';
 import { sendTelegramMessage } from '../connectors/telegram-connector.js';
 import { sendWebhook } from '../connectors/webhook-connector.js';
 
 export function registerToolRoutes(app: FastifyInstance, ctx: AppContext): void {
   const agentService = new AgentService(ctx.db);
   const auditService = new AuditService(ctx.db);
+
+  /**
+   * RT-056 — generalizes HITL beyond chat's own cost/policy gate: an
+   * `action_type_in` policy can require approval for direct tool calls too.
+   * Returns the approvalId when a matching policy fired (caller should stop
+   * and NOT execute the tool), or null when clear to proceed.
+   */
+  async function checkPolicyGate(
+    organizationId: string,
+    agentId: string,
+    userId: string | null,
+    actionType: 'tool-telegram-send' | 'tool-webhook-send',
+    params: Record<string, unknown>,
+  ): Promise<string | null> {
+    const policyResult = await ctx.policyService.evaluate(organizationId, { estimatedCostCents: 0, actionType });
+    if (!policyResult.requiresApproval) return null;
+
+    const entry = await new ApprovalService(ctx.db).create(organizationId, {
+      agentId,
+      reason: `Matched policy: ${policyResult.matchedPolicyNames.join(', ')}`,
+      actionData: { pendingToolCall: { agentId, tool: actionType === 'tool-telegram-send' ? 'telegram-send' : 'webhook-send', params }, userId },
+    });
+    await auditService.logAction({
+      organizationId,
+      agentId,
+      userId,
+      actionType,
+      actionData: { ...params, approvalId: entry.id, matchedPolicyNames: policyResult.matchedPolicyNames },
+      status: 'pending',
+      approvalStatus: 'pending',
+    });
+    return entry.id;
+  }
 
   app.get('/v1/tools', async (request) => {
     requirePermission(request, 'tools:read');
@@ -31,6 +65,15 @@ export function registerToolRoutes(app: FastifyInstance, ctx: AppContext): void 
     if (!ctx.env.TELEGRAM_BOT_TOKEN) {
       throw new ValidationError('Telegram connector is not configured (TELEGRAM_BOT_TOKEN unset)');
     }
+
+    const approvalId = await checkPolicyGate(
+      request.auth.organizationId,
+      agent.id,
+      request.auth.userId,
+      'tool-telegram-send',
+      parsed.data,
+    );
+    if (approvalId) return { status: 'pending_approval', approvalId };
 
     try {
       const result = await sendTelegramMessage(ctx.env.TELEGRAM_BOT_TOKEN, parsed.data.chatId, parsed.data.message);
@@ -63,6 +106,15 @@ export function registerToolRoutes(app: FastifyInstance, ctx: AppContext): void 
     if (!parsed.success) throw new ValidationError('Invalid webhook-send payload', parsed.error.flatten());
 
     const agent = await agentService.getById(request.auth.organizationId, request.params.id);
+
+    const approvalId = await checkPolicyGate(
+      request.auth.organizationId,
+      agent.id,
+      request.auth.userId,
+      'tool-webhook-send',
+      parsed.data,
+    );
+    if (approvalId) return { status: 'pending_approval', approvalId };
 
     try {
       const result = await sendWebhook(parsed.data.url, parsed.data.payload);

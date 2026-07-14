@@ -1,6 +1,7 @@
 import type { SkillCreateInput, SkillUpdateInput, SkillDefinition } from '@o2n/shared';
 import { NotFoundError } from '@o2n/governance';
 import type { Queryable } from '../db.js';
+import { validateSkillDefinition } from './skill-validator.js';
 
 export type SkillSource = 'auto' | 'manual' | 'marketplace';
 export type SkillStatus = 'active' | 'inactive' | 'deprecated';
@@ -39,6 +40,14 @@ interface SkillRow {
   updated_at: string;
 }
 
+/** Patch-bump: "1.0.0" -> "1.0.1". Falls back to "1.0.0" for any pre-existing unparseable version string. */
+function bumpVersion(version: string): string {
+  const match = /^(\d+)\.(\d+)\.(\d+)$/.exec(version);
+  if (!match) return '1.0.0';
+  const [, major, minor, patch] = match;
+  return `${major}.${minor}.${Number(patch) + 1}`;
+}
+
 function toSkill(row: SkillRow): Skill {
   return {
     id: row.id,
@@ -63,6 +72,7 @@ export class SkillService {
   constructor(private db: Queryable) {}
 
   async create(organizationId: string, input: SkillCreateInput, source: SkillSource = 'manual'): Promise<Skill> {
+    await validateSkillDefinition(input.definition);
     const { rows } = await this.db.query<SkillRow>(
       `INSERT INTO skills (agent_id, organization_id, name, description, definition, source)
        VALUES ($1, $2, $3, $4, $5, $6)
@@ -93,7 +103,7 @@ export class SkillService {
   }
 
   async update(organizationId: string, skillId: string, input: SkillUpdateInput): Promise<Skill> {
-    await this.getById(organizationId, skillId); // 404s if missing/wrong org
+    const existing = await this.getById(organizationId, skillId); // 404s if missing/wrong org
 
     const fields: string[] = [];
     const values: unknown[] = [];
@@ -107,7 +117,14 @@ export class SkillService {
 
     if (input.name !== undefined) set('name', input.name);
     if (input.description !== undefined) set('description', input.description);
-    if (input.definition !== undefined) set('definition', JSON.stringify(input.definition));
+    if (input.definition !== undefined) {
+      await validateSkillDefinition(input.definition);
+      set('definition', JSON.stringify(input.definition));
+      // A changed definition is a new revision of this skill's behavior —
+      // bump automatically rather than trusting a client-supplied version
+      // (SkillUpdateSchema has no version field at all, see packages/shared).
+      set('version', bumpVersion(existing.version));
+    }
     if (input.status !== undefined) set('status', input.status);
     set('updated_at', new Date().toISOString());
 
@@ -127,6 +144,26 @@ export class SkillService {
       [skillId, organizationId],
     );
     if (!rows[0]) throw new NotFoundError('Skill', skillId);
+  }
+
+  /**
+   * Roadmap "version bump / fork" (03-skill-engine.md §2.1) — a fork is a
+   * brand-new skill row (fresh id, version reset to 1.0.0, its own execution
+   * stats starting at zero) that starts as a copy of an existing skill's
+   * definition, not a link back to it. `name` defaults to "<source> (fork)".
+   */
+  async fork(organizationId: string, skillId: string, name?: string): Promise<Skill> {
+    const source = await this.getById(organizationId, skillId);
+    return this.create(
+      organizationId,
+      {
+        agentId: source.agentId ?? undefined,
+        name: name ?? `${source.name} (fork)`,
+        description: source.description ?? undefined,
+        definition: source.definition,
+      },
+      'manual',
+    );
   }
 
   /** Called after each execution (skill-executor.ts) to keep execution_count/success_rate/avg_duration_ms current. */

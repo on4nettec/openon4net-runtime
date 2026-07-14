@@ -5,14 +5,15 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { api, loadSession, ApiError } from '@/lib/api-client';
 
-type ConditionType = 'cost_gt_cents' | 'outside_hours';
+type ConditionType = 'cost_gt_cents' | 'outside_hours' | 'action_type_in';
 
 interface Policy {
   id: string;
   name: string;
   condition:
     | { type: 'cost_gt_cents'; value: number }
-    | { type: 'outside_hours'; startHour: number; endHour: number };
+    | { type: 'outside_hours'; startHour: number; endHour: number }
+    | { type: 'action_type_in'; actionTypes: string[] };
   isActive: boolean;
   createdAt: string;
 }
@@ -21,7 +22,10 @@ function describeCondition(condition: Policy['condition']): string {
   if (condition.type === 'cost_gt_cents') {
     return `estimated cost > ${condition.value}¢`;
   }
-  return `outside ${condition.startHour}:00–${condition.endHour}:00 UTC`;
+  if (condition.type === 'outside_hours') {
+    return `outside ${condition.startHour}:00–${condition.endHour}:00 UTC`;
+  }
+  return `action in [${condition.actionTypes.join(', ')}]`;
 }
 
 export default function PoliciesPage() {
@@ -36,6 +40,7 @@ export default function PoliciesPage() {
   const [costValue, setCostValue] = useState(2000);
   const [startHour, setStartHour] = useState(9);
   const [endHour, setEndHour] = useState(18);
+  const [actionTypes, setActionTypes] = useState('tool-webhook-send');
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
 
@@ -65,7 +70,15 @@ export default function PoliciesPage() {
       const condition =
         conditionType === 'cost_gt_cents'
           ? ({ type: 'cost_gt_cents', value: costValue } as const)
-          : ({ type: 'outside_hours', startHour, endHour } as const);
+          : conditionType === 'outside_hours'
+            ? ({ type: 'outside_hours', startHour, endHour } as const)
+            : ({
+                type: 'action_type_in',
+                actionTypes: actionTypes
+                  .split(',')
+                  .map((s) => s.trim())
+                  .filter(Boolean),
+              } as const);
       await api.createPolicy({ name, condition });
       setName('');
       await loadPolicies();
@@ -116,6 +129,7 @@ export default function PoliciesPage() {
           <Link href="/skill-proposals">Skill Proposals</Link>
           <Link href="/marketplace">Marketplace</Link>
           <Link href="/approvals">Approvals</Link>
+          <Link href="/workflows">Workflows</Link>
           <Link href="/audit">Audit Log</Link>
           <Link href="/settings">Settings</Link>
         </nav>
@@ -190,6 +204,7 @@ export default function PoliciesPage() {
                   <select value={conditionType} onChange={(e) => setConditionType(e.target.value as ConditionType)}>
                     <option value="cost_gt_cents">Estimated cost greater than…</option>
                     <option value="outside_hours">Outside business hours</option>
+                    <option value="action_type_in">Specific action (tool call, etc.)</option>
                   </select>
                 </label>
                 {conditionType === 'cost_gt_cents' ? (
@@ -202,7 +217,7 @@ export default function PoliciesPage() {
                       onChange={(e) => setCostValue(Number(e.target.value))}
                     />
                   </label>
-                ) : (
+                ) : conditionType === 'outside_hours' ? (
                   <div style={{ display: 'flex', gap: 10 }}>
                     <label style={{ flex: 1 }}>
                       Start hour (UTC)
@@ -225,6 +240,18 @@ export default function PoliciesPage() {
                       />
                     </label>
                   </div>
+                ) : (
+                  <label>
+                    Action types (comma-separated)
+                    <input
+                      value={actionTypes}
+                      onChange={(e) => setActionTypes(e.target.value)}
+                      placeholder="tool-webhook-send, tool-telegram-send"
+                    />
+                    <span style={{ display: 'block', color: '#9aa0aa', fontSize: 12, marginTop: 4 }}>
+                      Applies to direct tool calls only, not Workflow steps.
+                    </span>
+                  </label>
                 )}
                 <button type="submit" disabled={creating}>
                   {creating ? 'Adding…' : 'Add policy'}

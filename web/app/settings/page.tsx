@@ -40,6 +40,11 @@ export default function SettingsPage() {
   const [savingOrg, setSavingOrg] = useState(false);
   const [orgSaveError, setOrgSaveError] = useState<string | null>(null);
 
+  const [auditRetentionDays, setAuditRetentionDays] = useState('');
+  const [savingRetention, setSavingRetention] = useState(false);
+  const [retentionSaveError, setRetentionSaveError] = useState<string | null>(null);
+  const [retentionSaved, setRetentionSaved] = useState(false);
+
   const [wallet, setWallet] = useState<{ balanceCredits: number; initialized?: boolean } | null>(null);
   const [walletError, setWalletError] = useState<string | null>(null);
   const [topUpAmount, setTopUpAmount] = useState('');
@@ -72,6 +77,8 @@ export default function SettingsPage() {
       .then((org) => {
         setOrganization(org);
         setOrgName(org.name);
+        const retention = org.settings.auditRetentionDays;
+        setAuditRetentionDays(typeof retention === 'number' ? String(retention) : '');
       })
       .catch((err) => setOrgError(err instanceof ApiError ? err.message : 'Failed to load organization'));
   }
@@ -129,6 +136,22 @@ export default function SettingsPage() {
     }
   }
 
+  async function handleSaveRetention(e: FormEvent) {
+    e.preventDefault();
+    setSavingRetention(true);
+    setRetentionSaveError(null);
+    setRetentionSaved(false);
+    try {
+      const days = auditRetentionDays.trim() === '' ? null : Number(auditRetentionDays);
+      await api.updateOrganization({ settings: { auditRetentionDays: days } });
+      setRetentionSaved(true);
+    } catch (err) {
+      setRetentionSaveError(err instanceof ApiError ? err.message : 'Failed to save retention setting');
+    } finally {
+      setSavingRetention(false);
+    }
+  }
+
   async function handleTopUp(e: FormEvent) {
     e.preventDefault();
     setToppingUp(true);
@@ -177,6 +200,7 @@ export default function SettingsPage() {
           <Link href="/skill-proposals">Skill Proposals</Link>
           <Link href="/marketplace">Marketplace</Link>
           <Link href="/approvals">Approvals</Link>
+          <Link href="/workflows">Workflows</Link>
           {isAdmin ? <Link href="/workspaces">Workspaces</Link> : null}
           {isAdmin ? <Link href="/users">Users</Link> : null}
           {isAdmin ? <Link href="/roles">Roles & Permissions</Link> : null}
@@ -221,6 +245,34 @@ export default function SettingsPage() {
             ) : !orgError ? (
               <p>Loading…</p>
             ) : null}
+
+            <h2 style={{ fontSize: 16, marginTop: 24 }}>Governance</h2>
+            <p style={{ color: '#9aa0aa', fontSize: 13, marginTop: 0 }}>
+              Blank means never auto-delete (or fall back to the Runtime-wide <code>AUDIT_RETENTION_DAYS</code>{' '}
+              default, if set). Swept once a day.
+            </p>
+            <div className="card" style={{ marginBottom: 24 }}>
+              <form onSubmit={handleSaveRetention} style={{ display: 'flex', alignItems: 'flex-end', gap: 10 }}>
+                {retentionSaveError ? <div className="error">{retentionSaveError}</div> : null}
+                <label>
+                  Audit retention (days)
+                  <input
+                    type="number"
+                    min={1}
+                    value={auditRetentionDays}
+                    onChange={(e) => {
+                      setAuditRetentionDays(e.target.value);
+                      setRetentionSaved(false);
+                    }}
+                    placeholder="Never"
+                  />
+                </label>
+                <button type="submit" disabled={savingRetention}>
+                  {savingRetention ? 'Saving…' : 'Save'}
+                </button>
+                {retentionSaved ? <span style={{ color: '#4caf7d', fontSize: 13 }}>✓ Saved</span> : null}
+              </form>
+            </div>
 
             <h2 style={{ fontSize: 16, marginTop: 24 }}>Wallet</h2>
             <p style={{ color: '#9aa0aa', fontSize: 13, marginTop: 0 }}>

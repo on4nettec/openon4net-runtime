@@ -8,9 +8,11 @@ import type {
   ErrorEnvelope,
   Message,
   ApprovalQueueEntry,
+  KpiDefinition,
   Organization,
   User,
   Workspace,
+  WorkflowDefinition,
 } from '@o2n/shared';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
@@ -85,6 +87,31 @@ export interface Invitation {
   createdAt: string;
 }
 
+export interface Workflow {
+  id: string;
+  organizationId: string;
+  name: string;
+  description: string | null;
+  definition: WorkflowDefinition;
+  status: 'draft' | 'active' | 'archived';
+  createdByUserId: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface WorkflowRun {
+  id: string;
+  workflowId: string;
+  organizationId: string;
+  status: 'pending' | 'running' | 'paused' | 'success' | 'failed';
+  currentStepId: string | null;
+  context: Record<string, unknown>;
+  pendingApprovalId: string | null;
+  startedAt: string | null;
+  completedAt: string | null;
+  createdAt: string;
+}
+
 export interface SkillGrant {
   id: string;
   agentId: string;
@@ -119,6 +146,35 @@ export interface MarketplacePlugin {
   publisherVerified: boolean;
   latestVersion: string | null;
   manifest: { configSchema?: MarketplaceConfigField[] } | null;
+  permissions: string[];
+  installCount: number;
+  avgRating: number | null;
+  ratingCount: number;
+  createdAt: string;
+}
+
+export interface PublisherPlugin {
+  pluginId: string;
+  packageName: string;
+  name: string;
+  description: string | null;
+  status: string;
+  publisherId: string;
+  publisherSlug: string;
+  latestVersion: string | null;
+  latestVersionStatus: string | null;
+  createdAt: string;
+}
+
+export interface PublisherSkill {
+  skillId: string;
+  slug: string;
+  name: string;
+  description: string | null;
+  status: string;
+  priceCents: number;
+  publisherId: string;
+  publisherSlug: string;
   createdAt: string;
 }
 
@@ -129,6 +185,9 @@ export interface MarketplaceSkillListing {
   description: string | null;
   priceCents: number;
   publisherSlug: string;
+  installCount: number;
+  avgRating: number | null;
+  ratingCount: number;
   createdAt: string;
 }
 
@@ -276,6 +335,30 @@ export async function streamChat(
   }
 }
 
+/** Triggers a browser file download — request()'s JSON-only response.json() doesn't fit CSV/attachment responses, so this bypasses it with a raw fetch + blob (RT-054). */
+export async function downloadAuditLogExport(format: 'csv' | 'json'): Promise<void> {
+  const session = loadSession();
+  if (!session) throw new Error('Not signed in');
+
+  const response = await fetch(`${API_URL}/v1/audit/export?format=${format}`, {
+    headers: { Authorization: `Bearer ${session.token}`, 'X-Organization-Id': session.organizationId },
+  });
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as ErrorEnvelope | null;
+    throw new ApiError(body?.error.code ?? 'UNKNOWN_ERROR', body?.error.message ?? 'Export failed', response.status);
+  }
+
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = format === 'csv' ? 'audit-log.csv' : 'audit-log.json';
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+
 export const api = {
   login: (input: {
     apiKey: string;
@@ -297,6 +380,12 @@ export const api = {
   pauseAgent: (id: string) => request<Agent>(`/v1/agents/${id}/pause`, { method: 'POST' }),
   resumeAgent: (id: string) => request<Agent>(`/v1/agents/${id}/resume`, { method: 'POST' }),
   terminateAgent: (id: string) => request<void>(`/v1/agents/${id}`, { method: 'DELETE' }),
+
+  listAgentReports: (id: string) => request<Agent[]>(`/v1/agents/${id}/reports`),
+  listAgentTeam: (id: string) => request<Agent[]>(`/v1/agents/${id}/team`),
+
+  updateAgentKpis: (id: string, kpis: KpiDefinition[]) =>
+    request<Agent>(`/v1/agents/${id}/kpis`, { method: 'PATCH', body: JSON.stringify({ kpis }) }),
 
   getLatestConversation: (agentId: string) =>
     request<{ conversation: Conversation | null; messages: Message[] }>(`/v1/agents/${agentId}/conversation`),
@@ -362,6 +451,8 @@ export const api = {
     return request<{ logs: AuditLog[]; total: number }>(`/v1/audit${qs ? `?${qs}` : ''}`);
   },
 
+  verifyAuditChain: () => request<{ valid: boolean; brokenAtId?: string; checkedCount: number }>('/v1/audit/verify'),
+
   getRoles: () =>
     request<{ id: string; name: string; isSystem: boolean; permissions: string[] }[]>('/v1/roles'),
 
@@ -386,7 +477,8 @@ export const api = {
         name: string;
         condition:
           | { type: 'cost_gt_cents'; value: number }
-          | { type: 'outside_hours'; startHour: number; endHour: number };
+          | { type: 'outside_hours'; startHour: number; endHour: number }
+          | { type: 'action_type_in'; actionTypes: string[] };
         isActive: boolean;
         createdAt: string;
       }[]
@@ -396,7 +488,8 @@ export const api = {
     name: string;
     condition:
       | { type: 'cost_gt_cents'; value: number }
-      | { type: 'outside_hours'; startHour: number; endHour: number };
+      | { type: 'outside_hours'; startHour: number; endHour: number }
+      | { type: 'action_type_in'; actionTypes: string[] };
   }) =>
     request<{ id: string; name: string; condition: unknown; isActive: boolean; createdAt: string }>(
       '/v1/policies',
@@ -466,10 +559,10 @@ export const api = {
 
   listMarketplaceSkills: () => request<{ skills: MarketplaceSkillListing[]; total: number }>('/v1/marketplace/skills'),
 
-  installMarketplacePlugin: (pluginId: string) =>
+  installMarketplacePlugin: (pluginId: string, opts?: { acknowledgePermissionDiff?: boolean }) =>
     request<{ installId: string; pluginId: string; version: string; isActive: boolean }>(
       `/v1/marketplace/plugins/${pluginId}/install`,
-      { method: 'POST' },
+      { method: 'POST', body: JSON.stringify(opts ?? {}) },
     ),
 
   installMarketplaceSkill: (skillId: string) =>
@@ -482,6 +575,49 @@ export const api = {
       `/v1/marketplace/installs/${installId}/config`,
       { method: 'PATCH', body: JSON.stringify({ config }) },
     ),
+
+  rateMarketplacePlugin: (pluginId: string, rating: number, review?: string) =>
+    request<{ pluginId: string; rating: number }>(`/v1/marketplace/plugins/${pluginId}/rate`, {
+      method: 'POST',
+      body: JSON.stringify({ rating, review }),
+    }),
+
+  rateMarketplaceSkill: (skillId: string, rating: number, review?: string) =>
+    request<{ skillId: string; rating: number }>(`/v1/marketplace/skills/${skillId}/rate`, {
+      method: 'POST',
+      body: JSON.stringify({ rating, review }),
+    }),
+
+  listPublisherPlugins: (publisherSlug: string) =>
+    request<{ plugins: PublisherPlugin[]; total: number }>(
+      `/v1/marketplace/publisher/plugins?publisherSlug=${encodeURIComponent(publisherSlug)}`,
+    ),
+
+  submitPublisherPlugin: (input: {
+    publisherSlug: string;
+    publisherDisplayName: string;
+    packageName: string;
+    name: string;
+    description?: string | undefined;
+    version: string;
+    manifest: Record<string, unknown>;
+    permissions?: string[] | undefined;
+  }) => request<{ pluginId: string; versionId: string }>('/v1/marketplace/publisher/plugins', { method: 'POST', body: JSON.stringify(input) }),
+
+  listPublisherSkills: (publisherSlug: string) =>
+    request<{ skills: PublisherSkill[]; total: number }>(
+      `/v1/marketplace/publisher/skills?publisherSlug=${encodeURIComponent(publisherSlug)}`,
+    ),
+
+  submitPublisherSkill: (input: {
+    publisherSlug: string;
+    publisherDisplayName: string;
+    skillSlug: string;
+    name: string;
+    description?: string | undefined;
+    definition: Record<string, unknown>;
+    priceCents?: number | undefined;
+  }) => request<{ skillId: string }>('/v1/marketplace/publisher/skills', { method: 'POST', body: JSON.stringify(input) }),
 
   getOrganization: () => request<Organization>('/v1/organization'),
 
@@ -510,4 +646,17 @@ export const api = {
 
   creditWallet: (input: { amountCredits: number; reason: string }) =>
     request<{ balanceCredits: number }>('/v1/wallet/credit', { method: 'POST', body: JSON.stringify(input) }),
+
+  listWorkflows: () => request<Workflow[]>('/v1/workflows'),
+
+  createWorkflow: (input: { name: string; description?: string | undefined; definition: WorkflowDefinition }) =>
+    request<Workflow>('/v1/workflows', { method: 'POST', body: JSON.stringify(input) }),
+
+  getWorkflow: (id: string) => request<Workflow>(`/v1/workflows/${id}`),
+
+  listWorkflowRuns: (id: string) => request<WorkflowRun[]>(`/v1/workflows/${id}/runs`),
+
+  runWorkflow: (id: string) => request<WorkflowRun>(`/v1/workflows/${id}/run`, { method: 'POST' }),
+
+  getWorkflowRun: (id: string) => request<WorkflowRun>(`/v1/workflow-runs/${id}`),
 };

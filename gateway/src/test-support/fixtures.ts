@@ -50,6 +50,8 @@ export async function cleanupTestFixture(db: Db, organizationId: string): Promis
   await db.query(`DELETE FROM approval_queue WHERE organization_id = $1`, [organizationId]);
   await db.query(`DELETE FROM skill_proposals WHERE organization_id = $1`, [organizationId]);
   await db.query(`DELETE FROM skills WHERE organization_id = $1`, [organizationId]);
+  // workflows.created_by_user_id has no ON DELETE CASCADE, so it must go before users.
+  await db.query(`DELETE FROM workflows WHERE organization_id = $1`, [organizationId]); // cascades workflow_runs, workflow_run_steps
   await db.query(`DELETE FROM users WHERE organization_id = $1`, [organizationId]);
-  await db.query(`DELETE FROM organizations WHERE id = $1`, [organizationId]); // cascades workspaces, agents, agent_skill_grants
+  await db.query(`DELETE FROM organizations WHERE id = $1`, [organizationId]); // cascades workspaces, agents, agent_skill_grants, agent_messages
 }

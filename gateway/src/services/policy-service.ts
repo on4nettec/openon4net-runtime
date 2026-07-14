@@ -14,6 +14,8 @@ export interface PolicyEvalContext {
   estimatedCostCents: number;
   /** Defaults to now — parameterized for tests. */
   now?: Date;
+  /** RT-056 — set by callers outside chat (e.g. routes/tools.ts) to let `action_type_in` conditions match. Omitted entirely by chat-service.ts, so those conditions simply never match a chat request. */
+  actionType?: string;
 }
 
 export interface PolicyEvalResult {
@@ -53,6 +55,8 @@ function matches(condition: PolicyCondition, ctx: PolicyEvalContext): boolean {
           : hour >= condition.startHour || hour < condition.endHour;
       return !inWindow;
     }
+    case 'action_type_in':
+      return ctx.actionType !== undefined && condition.actionTypes.includes(ctx.actionType);
     default: {
       const exhaustive: never = condition;
       throw new Error(`Unknown policy condition type: ${JSON.stringify(exhaustive)}`);

@@ -36,6 +36,23 @@ export function registerSkillRoutes(app: FastifyInstance, ctx: AppContext): void
     });
   });
 
+  app.post<{ Params: { id: string }; Body: { name?: string } }>('/v1/skills/:id/fork', async (request) => {
+    requirePermission(request, 'skills:create');
+    const body = (request.body ?? {}) as { name?: string };
+
+    return withTransaction(ctx.db, async (client) => {
+      const forked = await new SkillService(client).fork(request.auth.organizationId, request.params.id, body.name);
+      await new AuditService(client).logAction({
+        organizationId: request.auth.organizationId,
+        agentId: forked.agentId,
+        userId: request.auth.userId,
+        actionType: 'skill-fork',
+        actionData: { traceId: request.traceId, sourceSkillId: request.params.id, forkedSkillId: forked.id },
+      });
+      return forked;
+    });
+  });
+
   app.get('/v1/skills', async (request) => {
     requirePermission(request, 'skills:read');
     return skillService.list(request.auth.organizationId);

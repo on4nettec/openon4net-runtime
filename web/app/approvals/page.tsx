@@ -75,6 +75,7 @@ export default function ApprovalsPage() {
           <Link href="/skill-proposals">Skill Proposals</Link>
           <strong>Approvals</strong>
           <Link href="/marketplace">Marketplace</Link>
+          <Link href="/workflows">Workflows</Link>
           <Link href="/policies">Policies</Link>
           <Link href="/settings">Settings</Link>
         </nav>

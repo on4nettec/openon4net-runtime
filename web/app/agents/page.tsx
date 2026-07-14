@@ -3,8 +3,11 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import type { Agent, User, Workspace } from '@o2n/shared';
+import type { Agent, KpiDefinition, User, Workspace } from '@o2n/shared';
+import { AGENT_ROLE_CATALOG } from '@o2n/shared';
 import { api, loadSession, clearSession, ApiError, type Session } from '@/lib/api-client';
+
+const OTHER_ROLE = '__other__';
 
 type AccessRole = 'owner' | 'member' | 'viewer';
 interface AgentAccessBinding {
@@ -27,11 +30,15 @@ export default function AgentsPage() {
 
   const [showCreate, setShowCreate] = useState(false);
   const [name, setName] = useState('');
-  const [role, setRole] = useState('');
+  const [roleChoice, setRoleChoice] = useState<string>(AGENT_ROLE_CATALOG[0]?.value ?? OTHER_ROLE);
+  const [customRole, setCustomRole] = useState('');
+  const role = roleChoice === OTHER_ROLE ? customRole : roleChoice;
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [workspaceId, setWorkspaceId] = useState('');
+  const [reportsTo, setReportsTo] = useState('');
   const [creating, setCreating] = useState(false);
   const [actioningId, setActioningId] = useState<string | null>(null);
+  const [showOrgChart, setShowOrgChart] = useState(false);
 
   const [scheduleOpenId, setScheduleOpenId] = useState<string | null>(null);
   const [scheduleEnabled, setScheduleEnabled] = useState(false);
@@ -47,6 +54,11 @@ export default function AgentsPage() {
   const [selectedAccessRole, setSelectedAccessRole] = useState<AccessRole>('member');
   const [savingAccess, setSavingAccess] = useState(false);
   const [accessError, setAccessError] = useState<string | null>(null);
+
+  const [kpisOpenId, setKpisOpenId] = useState<string | null>(null);
+  const [kpiDrafts, setKpiDrafts] = useState<KpiDefinition[]>([]);
+  const [savingKpis, setSavingKpis] = useState(false);
+  const [kpisError, setKpisError] = useState<string | null>(null);
 
   useEffect(() => {
     const s = loadSession();
@@ -84,9 +96,11 @@ export default function AgentsPage() {
     try {
       const s = loadSession();
       if (!s) throw new Error('No session');
-      await api.createAgent({ name, role, workspaceId: workspaceId || s.workspaceId });
+      await api.createAgent({ name, role, workspaceId: workspaceId || s.workspaceId, reportsTo: reportsTo || undefined });
       setName('');
-      setRole('');
+      setRoleChoice(AGENT_ROLE_CATALOG[0]?.value ?? OTHER_ROLE);
+      setCustomRole('');
+      setReportsTo('');
       setShowCreate(false);
       await refresh();
     } catch (err) {
@@ -201,6 +215,43 @@ export default function AgentsPage() {
     }
   }
 
+  function toggleKpis(agent: Agent) {
+    if (kpisOpenId === agent.id) {
+      setKpisOpenId(null);
+      return;
+    }
+    const config = agent.kpiConfig as { kpis?: KpiDefinition[] };
+    setKpiDrafts(config.kpis ?? []);
+    setKpisError(null);
+    setKpisOpenId(agent.id);
+  }
+
+  function updateKpiDraft(index: number, field: keyof KpiDefinition, value: string) {
+    setKpiDrafts((prev) => prev.map((k, i) => (i === index ? { ...k, [field]: value } : k)));
+  }
+
+  function addKpiDraft() {
+    setKpiDrafts((prev) => [...prev, { name: '', target: '' }]);
+  }
+
+  function removeKpiDraft(index: number) {
+    setKpiDrafts((prev) => prev.filter((kpi, i) => i !== index));
+  }
+
+  async function handleSaveKpis(agentId: string) {
+    setSavingKpis(true);
+    setKpisError(null);
+    try {
+      await api.updateAgentKpis(agentId, kpiDrafts);
+      setKpisOpenId(null);
+      await refresh();
+    } catch (err) {
+      setKpisError(err instanceof ApiError ? err.message : 'Failed to save KPIs');
+    } finally {
+      setSavingKpis(false);
+    }
+  }
+
   async function handleTerminate(agentId: string, agentName: string) {
     if (!window.confirm(`Terminate "${agentName}"? This can't be undone from the UI.`)) return;
     setActioningId(agentId);
@@ -227,6 +278,7 @@ export default function AgentsPage() {
           <Link href="/skill-proposals">Skill Proposals</Link>
           <Link href="/marketplace">Marketplace</Link>
           <Link href="/approvals">Approvals</Link>
+          <Link href="/workflows">Workflows</Link>
           <Link href="/settings">Settings</Link>
           <button className="secondary" onClick={handleLogout}>
             Sign out
@@ -250,14 +302,27 @@ export default function AgentsPage() {
             </div>
             <div className="field">
               <label htmlFor="role">Role</label>
-              <input
-                id="role"
-                value={role}
-                onChange={(e) => setRole(e.target.value)}
-                placeholder="support, sales, ceo, ..."
-                required
-              />
+              <select id="role" value={roleChoice} onChange={(e) => setRoleChoice(e.target.value)}>
+                {AGENT_ROLE_CATALOG.map((r) => (
+                  <option key={r.value} value={r.value}>
+                    {r.label}
+                  </option>
+                ))}
+                <option value={OTHER_ROLE}>Other…</option>
+              </select>
             </div>
+            {roleChoice === OTHER_ROLE ? (
+              <div className="field">
+                <label htmlFor="customRole">Custom role</label>
+                <input
+                  id="customRole"
+                  value={customRole}
+                  onChange={(e) => setCustomRole(e.target.value)}
+                  placeholder="e.g. video-editor"
+                  required
+                />
+              </div>
+            ) : null}
             {workspaces.length > 1 ? (
               <div className="field">
                 <label htmlFor="workspace">Workspace</label>
@@ -270,10 +335,32 @@ export default function AgentsPage() {
                 </select>
               </div>
             ) : null}
+            {agents.length > 0 ? (
+              <div className="field">
+                <label htmlFor="reportsTo">Reports to (optional)</label>
+                <select id="reportsTo" value={reportsTo} onChange={(e) => setReportsTo(e.target.value)}>
+                  <option value="">None</option>
+                  {agents.map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {a.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ) : null}
             <button type="submit" disabled={creating}>
               {creating ? 'Creating…' : 'Create agent'}
             </button>
           </form>
+        ) : null}
+
+        {agents.length > 0 ? (
+          <div className="card" style={{ marginBottom: 20 }}>
+            <button className="secondary" onClick={() => setShowOrgChart((v) => !v)}>
+              {showOrgChart ? 'Hide org chart' : 'Show org chart'}
+            </button>
+            {showOrgChart ? <OrgChart agents={agents} /> : null}
+          </div>
         ) : null}
 
         {loading ? (
@@ -286,17 +373,33 @@ export default function AgentsPage() {
               const busy = actioningId === agent.id;
               const scheduleOpen = scheduleOpenId === agent.id;
               const accessOpen = accessOpenId === agent.id;
+              const kpisOpen = kpisOpenId === agent.id;
               const agentScheduleInfo = agent.schedule as { enabled?: boolean; intervalMinutes?: number };
+              const agentKpis = (agent.kpiConfig as { kpis?: KpiDefinition[] }).kpis ?? [];
               return (
                 <div key={agent.id} className="card">
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <Link href={`/agents/${agent.id}/chat`} style={{ textDecoration: 'none' }}>
                       <div style={{ fontWeight: 600 }}>{agent.name}</div>
                       <div style={{ color: '#9aa0aa', fontSize: 13 }}>{agent.role}</div>
+                      {agent.reportsTo ? (
+                        <div style={{ color: '#9aa0aa', fontSize: 12 }}>
+                          Reports to: {agents.find((a) => a.id === agent.reportsTo)?.name ?? agent.reportsTo}
+                        </div>
+                      ) : null}
                       <BudgetBar usedCents={agent.usedBudgetCents} limitCents={agent.monthlyBudgetCents} />
                       {agentScheduleInfo.enabled ? (
                         <div style={{ color: '#4caf7d', fontSize: 11, marginTop: 4 }}>
                           ⏱ every {agentScheduleInfo.intervalMinutes}m
+                        </div>
+                      ) : null}
+                      {agentKpis.length > 0 ? (
+                        <div style={{ marginTop: 6 }}>
+                          {agentKpis.map((kpi, i) => (
+                            <div key={i} style={{ fontSize: 11, color: '#9aa0aa' }}>
+                              {kpi.name}: {kpi.current ?? '—'} / {kpi.target}
+                            </div>
+                          ))}
                         </div>
                       ) : null}
                     </Link>
@@ -304,6 +407,9 @@ export default function AgentsPage() {
                       <span style={{ color: '#9aa0aa', fontSize: 13 }}>{agent.status}</span>
                       <button className="secondary" onClick={() => toggleSchedule(agent)}>
                         {scheduleOpen ? 'Cancel' : 'Schedule'}
+                      </button>
+                      <button className="secondary" onClick={() => toggleKpis(agent)}>
+                        {kpisOpen ? 'Cancel' : 'KPIs'}
                       </button>
                       {session.role === 'admin' ? (
                         <button className="secondary" onClick={() => toggleAccess(agent)}>
@@ -361,6 +467,48 @@ export default function AgentsPage() {
                       >
                         {savingSchedule ? 'Saving…' : 'Save schedule'}
                       </button>
+                    </div>
+                  ) : null}
+
+                  {kpisOpen ? (
+                    <div style={{ borderTop: '1px solid #2c3038', marginTop: 12, paddingTop: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                      {kpisError ? <div className="error">{kpisError}</div> : null}
+                      <div style={{ color: '#9aa0aa', fontSize: 12 }}>
+                        Targets set here; current values can be updated via the same form or the API as work progresses.
+                      </div>
+                      {kpiDrafts.map((kpi, i) => (
+                        <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                          <input
+                            placeholder="KPI name"
+                            value={kpi.name}
+                            onChange={(e) => updateKpiDraft(i, 'name', e.target.value)}
+                            style={{ flex: 2 }}
+                          />
+                          <input
+                            placeholder="Target"
+                            value={String(kpi.target)}
+                            onChange={(e) => updateKpiDraft(i, 'target', e.target.value)}
+                            style={{ flex: 1 }}
+                          />
+                          <input
+                            placeholder="Current"
+                            value={kpi.current !== undefined ? String(kpi.current) : ''}
+                            onChange={(e) => updateKpiDraft(i, 'current', e.target.value)}
+                            style={{ flex: 1 }}
+                          />
+                          <button className="secondary" onClick={() => removeKpiDraft(i)}>
+                            Remove
+                          </button>
+                        </div>
+                      ))}
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        <button className="secondary" onClick={addKpiDraft}>
+                          Add KPI
+                        </button>
+                        <button onClick={() => handleSaveKpis(agent.id)} disabled={savingKpis}>
+                          {savingKpis ? 'Saving…' : 'Save KPIs'}
+                        </button>
+                      </div>
                     </div>
                   ) : null}
 
@@ -446,4 +594,31 @@ function BudgetBar({ usedCents, limitCents }: { usedCents: number; limitCents: n
       </div>
     </div>
   );
+}
+
+/** Built client-side from the already-fetched agent list via reportsTo — no server-side tree endpoint needed for a plain indented view (roadmap item 13). */
+function OrgChart({ agents }: { agents: Agent[] }) {
+  const byManager = new Map<string, Agent[]>();
+  for (const agent of agents) {
+    if (!agent.reportsTo) continue;
+    const bucket = byManager.get(agent.reportsTo) ?? [];
+    bucket.push(agent);
+    byManager.set(agent.reportsTo, bucket);
+  }
+  const roots = agents.filter((a) => !a.reportsTo || !agents.some((x) => x.id === a.reportsTo));
+
+  function renderNode(agent: Agent, depth: number) {
+    const children = byManager.get(agent.id) ?? [];
+    return (
+      <div key={agent.id} style={{ marginLeft: depth * 20, marginTop: 6 }}>
+        <div style={{ fontSize: 13 }}>
+          <span style={{ fontWeight: 600 }}>{agent.name}</span>{' '}
+          <span style={{ color: '#9aa0aa' }}>({agent.role})</span>
+        </div>
+        {children.map((child) => renderNode(child, depth + 1))}
+      </div>
+    );
+  }
+
+  return <div style={{ marginTop: 12 }}>{roots.map((a) => renderNode(a, 0))}</div>;
 }

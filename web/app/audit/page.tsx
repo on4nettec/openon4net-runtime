@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import type { Agent, AuditLog } from '@o2n/shared';
-import { api, loadSession, ApiError } from '@/lib/api-client';
+import { api, loadSession, ApiError, downloadAuditLogExport } from '@/lib/api-client';
 
 const PAGE_SIZE = 25;
 
@@ -17,6 +17,34 @@ export default function AuditPage() {
   const [error, setError] = useState<string | null>(null);
   const [forbidden, setForbidden] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [exporting, setExporting] = useState(false);
+  const [verifying, setVerifying] = useState(false);
+  const [verifyResult, setVerifyResult] = useState<{ valid: boolean; brokenAtId?: string; checkedCount: number } | null>(null);
+
+  async function handleExport(format: 'csv' | 'json') {
+    setExporting(true);
+    setError(null);
+    try {
+      await downloadAuditLogExport(format);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Failed to export audit log');
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  async function handleVerify() {
+    setVerifying(true);
+    setError(null);
+    setVerifyResult(null);
+    try {
+      setVerifyResult(await api.verifyAuditChain());
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Failed to verify audit chain');
+    } finally {
+      setVerifying(false);
+    }
+  }
 
   function load(nextOffset: number) {
     setLoading(true);
@@ -67,6 +95,7 @@ export default function AuditPage() {
           <Link href="/skill-proposals">Skill Proposals</Link>
           <Link href="/marketplace">Marketplace</Link>
           <Link href="/approvals">Approvals</Link>
+          <Link href="/workflows">Workflows</Link>
           <Link href="/policies">Policies</Link>
         </nav>
       </div>
@@ -76,6 +105,25 @@ export default function AuditPage() {
         <p style={{ color: '#9aa0aa', fontSize: 14 }}>
           Every governed action — chats, approvals, config changes — organization-wide, newest first.
         </p>
+
+        <div style={{ display: 'flex', gap: 8, marginBottom: 12, alignItems: 'center' }}>
+          <button className="secondary" disabled={exporting} onClick={() => handleExport('csv')}>
+            Export CSV
+          </button>
+          <button className="secondary" disabled={exporting} onClick={() => handleExport('json')}>
+            Export JSON
+          </button>
+          <button className="secondary" disabled={verifying} onClick={handleVerify}>
+            {verifying ? 'Verifying…' : 'Verify integrity'}
+          </button>
+          {verifyResult ? (
+            <span style={{ fontSize: 13, color: verifyResult.valid ? '#4caf7d' : '#f2555a' }}>
+              {verifyResult.valid
+                ? `✅ Chain intact (${verifyResult.checkedCount} entries checked)`
+                : `❌ Broken at entry ${verifyResult.brokenAtId}`}
+            </span>
+          ) : null}
+        </div>
 
         {error ? <div className="error">{error}</div> : null}
 

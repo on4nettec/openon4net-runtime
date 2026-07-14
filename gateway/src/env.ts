@@ -48,6 +48,10 @@ const EnvSchema = z
     // Leave unset to use each provider's default; irrelevant for anthropic.
     LLM_BASE_URL: z.string().url().optional(),
     APPROVAL_THRESHOLD_CENTS: z.coerce.number().int().nonnegative().default(2000),
+    // Global default for audit log retention (RT-054) — unset means "never
+    // auto-delete", same opt-in philosophy as WalletService. An org can
+    // override with its own organizations.settings.auditRetentionDays.
+    AUDIT_RETENTION_DAYS: z.coerce.number().int().positive().optional(),
     SHORT_MEMORY_TTL_SECONDS: z.coerce.number().int().positive().default(3600),
     RATE_LIMIT_PER_MINUTE: z.coerce.number().int().positive().default(100),
     // Optional: the telegram-send tool 400s with a clear message if unset,

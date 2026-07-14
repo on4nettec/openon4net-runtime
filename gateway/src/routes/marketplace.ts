@@ -1,9 +1,14 @@
 import type { FastifyInstance } from 'fastify';
-import { ActivationRequiredError, O2NError, ValidationError } from '@o2n/governance';
+import { ActivationRequiredError, O2NError, PermissionDiffRequiredError, ValidationError } from '@o2n/governance';
 import type { SkillDefinition } from '@o2n/shared';
 import type { AppContext } from '../context.js';
 import { requirePermission } from '../lib/require-permission.js';
-import { marketplaceClient } from '../services/marketplace-client.js';
+import {
+  marketplaceClient,
+  PermissionDiffRequiredError as ClientPermissionDiffRequiredError,
+  type SubmitPluginInput,
+  type SubmitSkillInput,
+} from '../services/marketplace-client.js';
 import { SkillService } from '../services/skill-service.js';
 import { AuditService } from '../services/audit-service.js';
 
@@ -34,20 +39,39 @@ export function registerMarketplaceRoutes(app: FastifyInstance, ctx: AppContext)
     return marketplaceClient.listSkills(ctx.env);
   });
 
-  app.post<{ Params: { id: string } }>('/v1/marketplace/plugins/:id/install', async (request) => {
-    requirePermission(request, 'marketplace:install');
-    assertMarketplaceConfigured(ctx);
-    if (!ctx.activationState.isActivated()) throw new ActivationRequiredError();
+  app.post<{ Params: { id: string }; Body: { version?: string; acknowledgePermissionDiff?: boolean } }>(
+    '/v1/marketplace/plugins/:id/install',
+    async (request) => {
+      requirePermission(request, 'marketplace:install');
+      assertMarketplaceConfigured(ctx);
+      if (!ctx.activationState.isActivated()) throw new ActivationRequiredError();
 
-    const result = await marketplaceClient.installPlugin(ctx.env, request.params.id, request.auth.organizationId);
-    await new AuditService(ctx.db).logAction({
-      organizationId: request.auth.organizationId,
-      userId: request.auth.userId,
-      actionType: 'marketplace-install-plugin',
-      actionData: { traceId: request.traceId, pluginId: request.params.id },
-    });
-    return result;
-  });
+      const body = (request.body ?? {}) as { version?: string; acknowledgePermissionDiff?: boolean };
+      let result: Record<string, unknown>;
+      try {
+        result = await marketplaceClient.installPlugin(ctx.env, request.params.id, request.auth.organizationId, {
+          version: body.version,
+          acknowledgePermissionDiff: body.acknowledgePermissionDiff,
+        });
+      } catch (err) {
+        // Re-thrown with the same code/details, just via Runtime's own
+        // O2NError envelope so the UI handles it identically to any other
+        // Runtime error (see web/app/marketplace/page.tsx's install handler).
+        if (err instanceof ClientPermissionDiffRequiredError) {
+          throw new PermissionDiffRequiredError(err.addedPermissions, err.fromVersion, err.toVersion);
+        }
+        throw err;
+      }
+
+      await new AuditService(ctx.db).logAction({
+        organizationId: request.auth.organizationId,
+        userId: request.auth.userId,
+        actionType: 'marketplace-install-plugin',
+        actionData: { traceId: request.traceId, pluginId: request.params.id },
+      });
+      return result;
+    },
+  );
 
   app.post<{ Params: { id: string } }>('/v1/marketplace/skills/:id/install', async (request) => {
     requirePermission(request, 'marketplace:install');
@@ -94,6 +118,103 @@ export function registerMarketplaceRoutes(app: FastifyInstance, ctx: AppContext)
       userId: request.auth.userId,
       actionType: 'marketplace-update-install-config',
       actionData: { traceId: request.traceId, installId: request.params.installId },
+    });
+    return result;
+  });
+
+  // Rating requires having installed (marketplace:install, not a separate
+  // permission) — an org rating something it never used isn't meaningful.
+  app.post<{ Params: { id: string }; Body: { rating?: number; review?: string } }>(
+    '/v1/marketplace/plugins/:id/rate',
+    async (request) => {
+      requirePermission(request, 'marketplace:install');
+      assertMarketplaceConfigured(ctx);
+      const body = (request.body ?? {}) as { rating?: number; review?: string };
+      if (typeof body.rating !== 'number') throw new ValidationError('rating is required');
+
+      const result = await marketplaceClient.ratePlugin(ctx.env, request.params.id, request.auth.organizationId, body.rating, body.review);
+      await new AuditService(ctx.db).logAction({
+        organizationId: request.auth.organizationId,
+        userId: request.auth.userId,
+        actionType: 'marketplace-rate-plugin',
+        actionData: { traceId: request.traceId, pluginId: request.params.id, rating: body.rating },
+      });
+      return result;
+    },
+  );
+
+  app.post<{ Params: { id: string }; Body: { rating?: number; review?: string } }>(
+    '/v1/marketplace/skills/:id/rate',
+    async (request) => {
+      requirePermission(request, 'marketplace:install');
+      assertMarketplaceConfigured(ctx);
+      const body = (request.body ?? {}) as { rating?: number; review?: string };
+      if (typeof body.rating !== 'number') throw new ValidationError('rating is required');
+
+      const result = await marketplaceClient.rateSkill(ctx.env, request.params.id, request.auth.organizationId, body.rating, body.review);
+      await new AuditService(ctx.db).logAction({
+        organizationId: request.auth.organizationId,
+        userId: request.auth.userId,
+        actionType: 'marketplace-rate-skill',
+        actionData: { traceId: request.traceId, marketplaceSkillId: request.params.id, rating: body.rating },
+      });
+      return result;
+    },
+  );
+
+  // MKT-022: proxies onto the marketplace service's already-fully-built
+  // /publisher/plugins and /publisher/skills — Runtime just never called
+  // them before. There's no "publisher = this org" identity system (MVP-lite
+  // shared-secret auth, see marketplace's plugins/auth.ts) — publisherSlug
+  // is whatever the caller types, gated admin-only via marketplace:publish.
+  app.get<{ Querystring: { publisherSlug?: string } }>('/v1/marketplace/publisher/plugins', async (request) => {
+    requirePermission(request, 'marketplace:publish');
+    assertMarketplaceConfigured(ctx);
+    const publisherSlug = request.query.publisherSlug?.trim();
+    if (!publisherSlug) throw new ValidationError('publisherSlug query parameter is required');
+    return marketplaceClient.listPublisherPlugins(ctx.env, publisherSlug);
+  });
+
+  app.post<{ Body: SubmitPluginInput }>('/v1/marketplace/publisher/plugins', async (request) => {
+    requirePermission(request, 'marketplace:publish');
+    assertMarketplaceConfigured(ctx);
+    const body = request.body as Partial<SubmitPluginInput>;
+    if (!body.publisherSlug || !body.publisherDisplayName || !body.packageName || !body.name || !body.version || !body.manifest) {
+      throw new ValidationError('publisherSlug, publisherDisplayName, packageName, name, version, and manifest are required');
+    }
+
+    const result = await marketplaceClient.submitPlugin(ctx.env, body as SubmitPluginInput);
+    await new AuditService(ctx.db).logAction({
+      organizationId: request.auth.organizationId,
+      userId: request.auth.userId,
+      actionType: 'marketplace-publisher-submit-plugin',
+      actionData: { traceId: request.traceId, packageName: body.packageName },
+    });
+    return result;
+  });
+
+  app.get<{ Querystring: { publisherSlug?: string } }>('/v1/marketplace/publisher/skills', async (request) => {
+    requirePermission(request, 'marketplace:publish');
+    assertMarketplaceConfigured(ctx);
+    const publisherSlug = request.query.publisherSlug?.trim();
+    if (!publisherSlug) throw new ValidationError('publisherSlug query parameter is required');
+    return marketplaceClient.listPublisherSkills(ctx.env, publisherSlug);
+  });
+
+  app.post<{ Body: SubmitSkillInput }>('/v1/marketplace/publisher/skills', async (request) => {
+    requirePermission(request, 'marketplace:publish');
+    assertMarketplaceConfigured(ctx);
+    const body = request.body as Partial<SubmitSkillInput>;
+    if (!body.publisherSlug || !body.publisherDisplayName || !body.skillSlug || !body.name || !body.definition) {
+      throw new ValidationError('publisherSlug, publisherDisplayName, skillSlug, name, and definition are required');
+    }
+
+    const result = await marketplaceClient.submitSkill(ctx.env, body as SubmitSkillInput);
+    await new AuditService(ctx.db).logAction({
+      organizationId: request.auth.organizationId,
+      userId: request.auth.userId,
+      actionType: 'marketplace-publisher-submit-skill',
+      actionData: { traceId: request.traceId, skillSlug: body.skillSlug },
     });
     return result;
   });

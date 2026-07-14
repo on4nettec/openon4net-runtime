@@ -42,9 +42,10 @@ const PERMISSION_CATALOG: { resource: string; permissions: string[] }[] = [
     permissions: ['skills:create', 'skills:read', 'skills:update', 'skills:delete', 'skills:grant', 'skills:execute', 'skills:*'],
   },
   { resource: 'skill-proposals', permissions: ['skill-proposals:read', 'skill-proposals:approve'] },
-  { resource: 'marketplace', permissions: ['marketplace:read', 'marketplace:install', 'marketplace:*'] },
+  { resource: 'marketplace', permissions: ['marketplace:read', 'marketplace:install', 'marketplace:publish', 'marketplace:*'] },
   { resource: 'organization', permissions: ['organization:read', 'organization:write', 'organization:*'] },
   { resource: 'invitations', permissions: ['invitations:create', 'invitations:read', 'invitations:revoke', 'invitations:*'] },
+  { resource: 'workflows', permissions: ['workflows:create', 'workflows:read', 'workflows:update', 'workflows:run', 'workflows:*'] },
 ];
 
 export default function RolesPage() {

@@ -30,7 +30,12 @@ function isPrivateOrReservedIp(ip: string): boolean {
   return false;
 }
 
-export async function sendWebhook(url: string, payload: Record<string, unknown>): Promise<WebhookResult> {
+/**
+ * The SSRF guard itself, extracted so it can also run at skill *save* time
+ * (services/skill-validator.ts), not just at execution time — today an
+ * unsafe webhook URL is only caught the moment the skill actually runs.
+ */
+export async function assertSafeWebhookUrl(url: string): Promise<void> {
   const parsed = new URL(url);
   if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
     throw new ToolExecutionError('webhook-send', 'Only http/https URLs are allowed');
@@ -48,6 +53,10 @@ export async function sendWebhook(url: string, payload: Record<string, unknown>)
   if (isPrivateOrReservedIp(address)) {
     throw new ToolExecutionError('webhook-send', 'Requests to private/internal network addresses are not allowed');
   }
+}
+
+export async function sendWebhook(url: string, payload: Record<string, unknown>): Promise<WebhookResult> {
+  await assertSafeWebhookUrl(url);
 
   let response: Response;
   try {
