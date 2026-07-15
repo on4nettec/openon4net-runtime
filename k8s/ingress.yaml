@@ -1,0 +1,33 @@
+# Assumes ingress-nginx is already installed on the cluster — a generic,
+# widely-used choice, but not the only valid one. Swap the ingressClassName
+# and annotations for your cluster's actual controller if different.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: o2n-runtime
+  namespace: o2n-runtime
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: '10m'
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: api.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: o2n-gateway
+                port:
+                  number: 4000
+    - host: app.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: o2n-web
+                port:
+                  number: 3000

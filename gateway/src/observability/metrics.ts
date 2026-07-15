@@ -46,3 +46,25 @@ export const llmCostCentsTotal = new client.Counter({
   labelNames: ['provider', 'model'] as const,
   registers: [registry],
 });
+
+// --- RT-072: SLA monitoring — the 99.9% target itself is a business
+// commitment (documented in DONE.md), not something a metric "achieves";
+// these are the input signals an alert/dashboard needs to track it. ---
+
+const processStartMs = Date.now();
+
+export const uptimeSeconds = new client.Gauge({
+  name: 'o2n_uptime_seconds',
+  help: 'Seconds since this gateway process started',
+  registers: [registry],
+  collect() {
+    this.set((Date.now() - processStartMs) / 1000);
+  },
+});
+
+/** 1 = healthy, 0 = degraded — set by routes/health.ts on every /health check, not polled independently. */
+export const healthCheckStatus = new client.Gauge({
+  name: 'o2n_health_check_status',
+  help: 'Result of the most recent /health check (1 = ok, 0 = degraded)',
+  registers: [registry],
+});

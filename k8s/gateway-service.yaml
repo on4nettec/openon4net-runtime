@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: o2n-gateway
+  namespace: o2n-runtime
+spec:
+  selector:
+    app: o2n-gateway
+  ports:
+    - port: 4000
+      targetPort: 4000

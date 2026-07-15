@@ -1,0 +1,49 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: o2n-gateway
+  namespace: o2n-runtime
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: o2n-gateway
+  template:
+    metadata:
+      labels:
+        app: o2n-gateway
+    spec:
+      containers:
+        - name: gateway
+          # Build from Dockerfile.gateway and push to your own registry —
+          # this placeholder won't resolve as-is.
+          image: ghcr.io/on4nettec/openon4net-runtime-gateway:latest
+          ports:
+            - containerPort: 4000
+          envFrom:
+            - configMapRef:
+                name: o2n-gateway-config
+            - secretRef:
+                name: o2n-gateway-secrets
+          # DB/Redis-aware /health from routes/health.ts (RT-070) — same
+          # endpoint for both probes, no separate liveness/readiness split
+          # in v1.
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 4000
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 4000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: '250m'
+              memory: '256Mi'
+            limits:
+              cpu: '1'
+              memory: '512Mi'

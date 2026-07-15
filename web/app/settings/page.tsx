@@ -51,6 +51,22 @@ export default function SettingsPage() {
   const [toppingUp, setToppingUp] = useState(false);
   const [topUpError, setTopUpError] = useState<string | null>(null);
 
+  const [ssoConfig, setSsoConfig] = useState<{ protocol: 'oidc' | 'saml'; config: Record<string, string>; hasSecret: boolean } | null>(
+    null,
+  );
+  const [ssoLoaded, setSsoLoaded] = useState(false);
+  const [ssoError, setSsoError] = useState<string | null>(null);
+  const [editingSso, setEditingSso] = useState(false);
+  const [ssoProtocol, setSsoProtocol] = useState<'oidc' | 'saml'>('oidc');
+  const [issuerUrl, setIssuerUrl] = useState('');
+  const [clientId, setClientId] = useState('');
+  const [clientSecret, setClientSecret] = useState('');
+  const [entityId, setEntityId] = useState('');
+  const [ssoUrl, setSsoUrl] = useState('');
+  const [certificate, setCertificate] = useState('');
+  const [savingSso, setSavingSso] = useState(false);
+  const [ssoSaveError, setSsoSaveError] = useState<string | null>(null);
+
   const [editing, setEditing] = useState(false);
   const [provider, setProvider] = useState<(typeof PROVIDERS)[number]>('anthropic');
   const [model, setModel] = useState('');
@@ -90,6 +106,27 @@ export default function SettingsPage() {
       .catch((err) => setWalletError(err instanceof ApiError ? err.message : 'Failed to load wallet'));
   }
 
+  function loadSso() {
+    return api
+      .getSsoConfig()
+      .then((cfg) => {
+        setSsoConfig(cfg);
+        setSsoLoaded(true);
+        if (cfg) {
+          setSsoProtocol(cfg.protocol);
+          if (cfg.protocol === 'oidc') {
+            setIssuerUrl(cfg.config.issuerUrl ?? '');
+            setClientId(cfg.config.clientId ?? '');
+          } else {
+            setEntityId(cfg.config.entityId ?? '');
+            setSsoUrl(cfg.config.ssoUrl ?? '');
+            setCertificate(cfg.config.certificate ?? '');
+          }
+        }
+      })
+      .catch((err) => setSsoError(err instanceof ApiError ? err.message : 'Failed to load SSO config'));
+  }
+
   useEffect(() => {
     const session = loadSession();
     if (!session) {
@@ -102,6 +139,7 @@ export default function SettingsPage() {
     if (admin) {
       loadOrganization();
       loadWallet();
+      loadSso();
     }
   }, [router]);
 
@@ -164,6 +202,43 @@ export default function SettingsPage() {
       setTopUpError(err instanceof ApiError ? err.message : 'Failed to top up wallet');
     } finally {
       setToppingUp(false);
+    }
+  }
+
+  async function handleSaveSso(e: FormEvent) {
+    e.preventDefault();
+    setSavingSso(true);
+    setSsoSaveError(null);
+    try {
+      if (ssoProtocol === 'oidc') {
+        await api.setSsoConfig({ protocol: 'oidc', issuerUrl, clientId, clientSecret });
+      } else {
+        await api.setSsoConfig({ protocol: 'saml', entityId, ssoUrl, certificate });
+      }
+      setClientSecret('');
+      setEditingSso(false);
+      await loadSso();
+    } catch (err) {
+      setSsoSaveError(err instanceof ApiError ? err.message : 'Failed to save SSO config');
+    } finally {
+      setSavingSso(false);
+    }
+  }
+
+  async function handleDeleteSso() {
+    if (!window.confirm('Remove SSO configuration? Users will no longer be able to sign in via this org’s IdP.')) return;
+    setSsoSaveError(null);
+    try {
+      await api.deleteSsoConfig();
+      setSsoConfig(null);
+      setIssuerUrl('');
+      setClientId('');
+      setClientSecret('');
+      setEntityId('');
+      setSsoUrl('');
+      setCertificate('');
+    } catch (err) {
+      setSsoSaveError(err instanceof ApiError ? err.message : 'Failed to remove SSO config');
     }
   }
 
@@ -306,6 +381,117 @@ export default function SettingsPage() {
                     {toppingUp ? 'Adding…' : 'Top up'}
                   </button>
                 </form>
+              </div>
+            ) : null}
+
+            <h2 style={{ fontSize: 16, marginTop: 24 }}>Single Sign-On</h2>
+            <p style={{ color: '#9aa0aa', fontSize: 13, marginTop: 0 }}>
+              Enterprise SSO — this organization&apos;s own identity provider (OIDC or SAML). Users must already
+              have an account (SSO doesn&apos;t auto-create one) — it just replaces password/magic-link for signing
+              in to an existing account.
+            </p>
+            {ssoError ? <div className="error">{ssoError}</div> : null}
+            {ssoLoaded ? (
+              <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 24 }}>
+                {ssoConfig ? (
+                  <>
+                    <Row label="Protocol" value={ssoConfig.protocol.toUpperCase()} />
+                    {ssoConfig.protocol === 'oidc' ? (
+                      <>
+                        <Row label="Issuer URL" value={ssoConfig.config.issuerUrl ?? ''} />
+                        <Row label="Client ID" value={ssoConfig.config.clientId ?? ''} />
+                        <Row label="Client secret" value={ssoConfig.hasSecret ? '••••••••' : 'not set'} />
+                      </>
+                    ) : (
+                      <>
+                        <Row label="Entity ID" value={ssoConfig.config.entityId ?? ''} />
+                        <Row label="SSO URL" value={ssoConfig.config.ssoUrl ?? ''} />
+                      </>
+                    )}
+                    <div style={{ borderTop: '1px solid #2c3038', paddingTop: 14, marginTop: 4, display: 'flex', gap: 10 }}>
+                      <button type="button" onClick={() => setEditingSso((v) => !v)}>
+                        {editingSso ? 'Cancel' : 'Edit'}
+                      </button>
+                      <button type="button" className="secondary" onClick={handleDeleteSso}>
+                        Remove
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <p style={{ color: '#9aa0aa', margin: 0 }}>No SSO provider configured yet.</p>
+                )}
+
+                {!ssoConfig || editingSso ? (
+                  <form
+                    onSubmit={handleSaveSso}
+                    style={{ borderTop: ssoConfig ? '1px solid #2c3038' : 'none', paddingTop: ssoConfig ? 14 : 0, marginTop: 4, display: 'flex', flexDirection: 'column', gap: 10 }}
+                  >
+                    {ssoSaveError ? <div className="error">{ssoSaveError}</div> : null}
+                    <label>
+                      Protocol
+                      <select value={ssoProtocol} onChange={(e) => setSsoProtocol(e.target.value as 'oidc' | 'saml')}>
+                        <option value="oidc">OIDC</option>
+                        <option value="saml">SAML</option>
+                      </select>
+                    </label>
+                    {ssoProtocol === 'oidc' ? (
+                      <>
+                        <label>
+                          Issuer URL
+                          <input
+                            value={issuerUrl}
+                            onChange={(e) => setIssuerUrl(e.target.value)}
+                            placeholder="https://idp.example.com"
+                            required
+                          />
+                        </label>
+                        <label>
+                          Client ID
+                          <input value={clientId} onChange={(e) => setClientId(e.target.value)} required />
+                        </label>
+                        <label>
+                          Client secret
+                          <input
+                            type="password"
+                            value={clientSecret}
+                            onChange={(e) => setClientSecret(e.target.value)}
+                            placeholder="Enter new secret to set/replace it"
+                            required
+                          />
+                        </label>
+                      </>
+                    ) : (
+                      <>
+                        <label>
+                          Entity ID
+                          <input value={entityId} onChange={(e) => setEntityId(e.target.value)} required />
+                        </label>
+                        <label>
+                          SSO URL
+                          <input
+                            value={ssoUrl}
+                            onChange={(e) => setSsoUrl(e.target.value)}
+                            placeholder="https://idp.example.com/sso"
+                            required
+                          />
+                        </label>
+                        <label>
+                          Certificate (PEM x509)
+                          <textarea
+                            value={certificate}
+                            onChange={(e) => setCertificate(e.target.value)}
+                            rows={6}
+                            style={{ fontFamily: 'monospace', fontSize: 12, width: '100%' }}
+                            required
+                          />
+                        </label>
+                      </>
+                    )}
+                    <button type="submit" disabled={savingSso}>
+                      {savingSso ? 'Saving…' : 'Save'}
+                    </button>
+                  </form>
+                ) : null}
               </div>
             ) : null}
           </>

@@ -671,6 +671,22 @@ export const api = {
   updateOrganization: (input: { name?: string; settings?: Record<string, unknown> }) =>
     request<Organization>('/v1/organization', { method: 'PATCH', body: JSON.stringify(input) }),
 
+  getSsoConfig: () =>
+    request<{ protocol: 'oidc' | 'saml'; config: Record<string, string>; hasSecret: boolean; isEnabled: boolean } | null>(
+      '/v1/organization/sso',
+    ),
+
+  setSsoConfig: (
+    input:
+      | { protocol: 'oidc'; issuerUrl: string; clientId: string; clientSecret: string }
+      | { protocol: 'saml'; entityId: string; ssoUrl: string; certificate: string },
+  ) => request<{ protocol: 'oidc' | 'saml'; config: Record<string, string>; hasSecret: boolean; isEnabled: boolean }>(
+    '/v1/organization/sso',
+    { method: 'PUT', body: JSON.stringify(input) },
+  ),
+
+  deleteSsoConfig: () => request<void>('/v1/organization/sso', { method: 'DELETE' }),
+
   listInvitations: () => request<Invitation[]>('/v1/invitations'),
 
   createInvitation: (input: { email: string; role: string; workspaceId?: string | undefined }) =>

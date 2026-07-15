@@ -17,6 +17,7 @@ import { startAuditRetentionScheduler } from './services/audit-retention-schedul
 import { startKpiSnapshotScheduler } from './services/kpi-snapshot-scheduler.js';
 import { startReportScheduler } from './services/report-scheduler.js';
 import { startWorkflowTriggerScheduler } from './services/workflow-trigger-scheduler.js';
+import { startBackupScheduler } from './services/backup-scheduler.js';
 import type { AppContext } from './context.js';
 
 async function main(): Promise<void> {
@@ -53,6 +54,7 @@ async function main(): Promise<void> {
   startKpiSnapshotScheduler(ctx);
   startReportScheduler(ctx);
   startWorkflowTriggerScheduler(ctx);
+  startBackupScheduler(ctx);
 
   await app.listen({ port: env.PORT, host: '0.0.0.0' });
 }

@@ -43,6 +43,12 @@ const PUBLIC_ROUTES = new Set([
   // RT-065: inbound webhook — the unguessable token in the path is itself
   // the auth, same trust model as the invitation-accept route above.
   '/v1/webhooks/:token',
+  // RT-068/069: enterprise SSO login entrypoints — unauthenticated by
+  // definition, same as every other auth provider's start/callback routes.
+  '/v1/auth/oidc/start',
+  '/v1/auth/oidc/callback',
+  '/v1/auth/saml/start',
+  '/v1/auth/saml/acs',
 ]);
 
 export function registerAuth(app: FastifyInstance, jwtSecret: string, permissionService: PermissionService): void {
@@ -51,6 +57,14 @@ export function registerAuth(app: FastifyInstance, jwtSecret: string, permission
     void reply.header('X-Trace-Id', request.traceId);
 
     if (PUBLIC_ROUTES.has(request.routeOptions?.url ?? request.url)) {
+      return;
+    }
+    // RT-074: Swagger UI registers a whole sub-tree of routes (static
+    // assets, /docs/json, /docs/yaml, ...) under routePrefix — a prefix
+    // check instead of enumerating every one of them in PUBLIC_ROUTES,
+    // same reasoning as the token-in-path routes above: public API docs
+    // are meant to be browsable without a session.
+    if (request.url === '/docs' || request.url.startsWith('/docs/')) {
       return;
     }
 

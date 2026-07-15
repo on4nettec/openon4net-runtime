@@ -6,8 +6,17 @@ import { devApiKeyProvider } from './providers/dev-api-key.js';
 import { passwordProvider } from './providers/password.js';
 import { magicLinkProvider } from './providers/magic-link.js';
 import { oauthProvider } from './providers/oauth.js';
+import { oidcProvider } from './providers/oidc.js';
+import { samlProvider } from './providers/saml.js';
 
-const ALL_PROVIDERS: AuthProvider[] = [devApiKeyProvider, passwordProvider, magicLinkProvider, oauthProvider];
+const ALL_PROVIDERS: AuthProvider[] = [
+  devApiKeyProvider,
+  passwordProvider,
+  magicLinkProvider,
+  oauthProvider,
+  oidcProvider,
+  samlProvider,
+];
 
 /**
  * RT-014 — Auth Method Registry (docs/spect/02_ARCHITECTURE/16-authentication-modes.md).

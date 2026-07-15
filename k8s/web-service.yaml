@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: o2n-web
+  namespace: o2n-runtime
+spec:
+  selector:
+    app: o2n-web
+  ports:
+    - port: 3000
+      targetPort: 3000

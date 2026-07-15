@@ -1,0 +1,42 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: o2n-web
+  namespace: o2n-runtime
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: o2n-web
+  template:
+    metadata:
+      labels:
+        app: o2n-web
+    spec:
+      containers:
+        - name: web
+          image: ghcr.io/on4nettec/openon4net-runtime-web:latest
+          ports:
+            - containerPort: 3000
+          envFrom:
+            - configMapRef:
+                name: o2n-web-config
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: '100m'
+              memory: '256Mi'
+            limits:
+              cpu: '500m'
+              memory: '512Mi'

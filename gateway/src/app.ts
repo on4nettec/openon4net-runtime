@@ -1,5 +1,8 @@
 import Fastify, { type FastifyInstance } from 'fastify';
 import cors from '@fastify/cors';
+import formbody from '@fastify/formbody';
+import swagger from '@fastify/swagger';
+import swaggerUi from '@fastify/swagger-ui';
 import type { AppContext } from './context.js';
 import { registerErrorHandler } from './plugins/error-handler.js';
 import { registerAuth } from './plugins/auth.js';
@@ -30,11 +33,26 @@ import { registerWorkflowRoutes } from './routes/workflows.js';
 import { registerReportRoutes } from './routes/reports.js';
 import { registerInsightRoutes } from './routes/insights.js';
 import { registerWebhookRoutes } from './routes/webhooks.js';
+import { registerSsoRoutes } from './routes/sso.js';
 
 export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
   const app = Fastify({ logger: true });
 
   await app.register(cors, { origin: true });
+  // RT-069: SAML's POST binding (the IdP's redirect back to /v1/auth/saml/acs)
+  // sends application/x-www-form-urlencoded, not JSON — the only route in
+  // this gateway that needs it.
+  await app.register(formbody);
+
+  // RT-074: static mode serves the hand-written spec at docs/spect/04_API/
+  // 00-openapi-v0.1.yaml as-is — routes here use TS generics + inline Zod
+  // .safeParse() rather than Fastify `schema:` blocks, so dynamic mode
+  // (auto-generating from route schemas) has nothing to generate from.
+  await app.register(swagger, {
+    mode: 'static',
+    specification: { path: '../../../docs/spect/04_API/00-openapi-v0.1.yaml', baseDir: '../../../docs/spect/04_API' },
+  });
+  await app.register(swaggerUi, { routePrefix: '/docs' });
 
   app.addHook('onResponse', async (request, reply) => {
     const route = request.routeOptions?.url ?? request.url;
@@ -44,7 +62,7 @@ export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
   });
 
   registerErrorHandler(app);
-  registerHealthRoute(app);
+  registerHealthRoute(app, ctx);
   registerMetricsRoute(app);
   registerAuth(app, ctx.env.JWT_SECRET, ctx.permissionService);
   registerAuthMethods(app, ctx);
@@ -71,6 +89,7 @@ export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
   registerReportRoutes(app, ctx);
   registerInsightRoutes(app, ctx);
   registerWebhookRoutes(app, ctx);
+  registerSsoRoutes(app, ctx);
 
   return app;
 }

@@ -1,0 +1,24 @@
+# This is what roadmap Phase 5's "auto-scaling for agents" concretely means:
+# agents are DB rows handled by the stateless gateway (session state lives
+# in the JWT + Postgres/Redis, not in-process — see auth/session.ts), not
+# separate scalable processes, so scaling the gateway pod IS scaling agent
+# capacity.
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: o2n-gateway
+  namespace: o2n-runtime
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: o2n-gateway
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70

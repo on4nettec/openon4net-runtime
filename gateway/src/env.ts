@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-const AUTH_METHOD_VALUES = ['password', 'magic_link', 'oauth', 'dev_api_key'] as const;
+const AUTH_METHOD_VALUES = ['password', 'magic_link', 'oauth', 'dev_api_key', 'oidc', 'saml'] as const;
 
 /** Comma-separated env value -> array, trimmed, empty string -> []. */
 function csv(value: string | undefined): string[] {
@@ -123,6 +123,20 @@ const EnvSchema = z
     OAUTH_GITHUB_CLIENT_ID: z.string().min(1).optional(),
     OAUTH_GITHUB_CLIENT_SECRET: z.string().min(1).optional(),
     OAUTH_CALLBACK_URL: z.string().url().optional(),
+
+    // --- oidc/saml providers (RT-068/069): per-org IdP config lives in
+    // sso_configs (services/sso-config-service.ts), NOT here — this is only
+    // the gateway's own public base URL, shared by every org's redirect_uri
+    // / ACS URL, same role OAUTH_CALLBACK_URL plays for google/github. ---
+    SSO_CALLBACK_URL: z.string().url().optional(),
+
+    // --- backup/restore (RT-071) — opt-in, whole-DB, local-disk-only. Off
+    // by default, same "opt-in feature, no surprise behavior" philosophy as
+    // AUDIT_RETENTION_DAYS. ---
+    BACKUP_ENABLED: boolEnv(false),
+    BACKUP_DIR: z.string().min(1).default('./backups'),
+    BACKUP_INTERVAL_HOURS: z.coerce.number().int().positive().default(24),
+    BACKUP_RETENTION_DAYS: z.coerce.number().int().positive().default(30),
   })
   .superRefine((env, ctx) => {
     const methods = csv(env.AUTH_METHODS_ENABLED);
@@ -218,6 +232,17 @@ const EnvSchema = z
           });
         }
       }
+    }
+
+    // oidc/saml: unlike oauth above, there's no per-provider client id/secret
+    // to check here — that's per-org, resolved at request time from
+    // sso_configs. Only the shared callback base URL is a startup concern.
+    if ((methods.includes('oidc') || methods.includes('saml')) && !env.SSO_CALLBACK_URL) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['SSO_CALLBACK_URL'],
+        message: 'required when oidc or saml is enabled',
+      });
     }
   });
 

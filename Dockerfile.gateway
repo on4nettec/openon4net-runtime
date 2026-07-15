@@ -6,6 +6,14 @@ WORKDIR /repo
 FROM base AS deps
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml tsconfig.base.json turbo.json ./
 COPY packages ./packages
+# RT-074: app.ts serves this at runtime via @fastify/swagger's static mode
+# (a path relative to the gateway's own
+# cwd, ../../../docs/spect/04_API/00-openapi-v0.1.yaml — identical in both
+# local dev and this container, since both put the gateway 3 levels below
+# repo root). This lives in the PARENT repo, not apps/openon4net-runtime,
+# so it needs its own explicit COPY — the blanket COPY below only grabs
+# apps/openon4net-runtime.
+COPY docs/spect/04_API/00-openapi-v0.1.yaml ./docs/spect/04_API/00-openapi-v0.1.yaml
 # Copy the whole app dir (not just gateway) — pnpm-lock.yaml has an importer
 # entry for web too, and --frozen-lockfile requires every importer's
 # package.json to actually be present on disk, even ones this image won't run.
@@ -22,4 +30,10 @@ ENV NODE_ENV=production
 COPY --from=build /repo .
 WORKDIR /repo/apps/openon4net-runtime/gateway
 EXPOSE 4000
+# RT-070: node has a global fetch (20+), so this needs no extra package
+# (node:20-slim has neither curl nor wget) — hits the DB/Redis-aware
+# /health from routes/health.ts, doubling as the k8s liveness/readiness
+# probe's local equivalent.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD node -e "fetch('http://localhost:4000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 CMD ["node", "dist/index.js"]
