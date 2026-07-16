@@ -1,0 +1,141 @@
+import { randomUUID } from 'node:crypto';
+import { createServer, type Server } from 'node:http';
+import type { AddressInfo } from 'node:net';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { NotFoundError, PermissionDeniedError, ValidationError } from '@o2n/governance';
+import type { AppContext } from '../context.js';
+import { createTestContext } from '../test-support/context.js';
+import { createTestEnv } from '../test-support/env.js';
+import { createTestFixture, cleanupTestFixture, type TestFixture } from '../test-support/fixtures.js';
+import { PluginGrantService } from './plugin-grant-service.js';
+import { executePluginStep } from './plugin-invoker.js';
+
+/**
+ * Two local servers stand in for (1) apps/openon4net-marketplace (a
+ * separate repo/service — same rationale as marketplace-client.test.ts)
+ * and (2) the plugin's own declared HTTP-provider endpoint — the thing
+ * RT-079 actually invokes.
+ */
+function listen(server: Server): Promise<number> {
+  return new Promise((resolve) => {
+    server.listen(0, () => resolve((server.address() as AddressInfo).port));
+  });
+}
+
+describe('executePluginStep (RT-079)', () => {
+  const servers: Server[] = [];
+  const createdOrgIds: string[] = [];
+  let dbCtx: AppContext;
+
+  beforeAll(() => {
+    dbCtx = createTestContext();
+  });
+
+  afterEach(async () => {
+    for (const server of servers.splice(0)) {
+      await new Promise((resolve) => server.close(resolve));
+    }
+    for (const id of createdOrgIds.splice(0)) {
+      await cleanupTestFixture(dbCtx.db, id);
+    }
+  });
+
+  afterAll(async () => {
+    await dbCtx.db.end();
+    dbCtx.redis.disconnect();
+  });
+
+  async function withFixture(): Promise<TestFixture> {
+    const fixture = await createTestFixture(dbCtx.db);
+    createdOrgIds.push(fixture.organizationId);
+    return fixture;
+  }
+
+  /** Reuses dbCtx's real db/redis (no per-test connection leak) — only env.MARKETPLACE_SERVICE_URL varies. */
+  function ctxWithMarketplaceUrl(port: number): AppContext {
+    return { ...dbCtx, env: createTestEnv({ MARKETPLACE_SERVICE_URL: `http://127.0.0.1:${port}` }) };
+  }
+
+  async function startMarketplaceServer(pluginId: string, manifest: Record<string, unknown> | null): Promise<number> {
+    const server = createServer((req, res) => {
+      res.setHeader('Content-Type', 'application/json');
+      if (req.url === `/marketplace/plugins/${pluginId}`) {
+        res.end(
+          JSON.stringify({
+            pluginId,
+            packageName: 'com.o2n.test-provider',
+            name: 'Test Provider',
+            description: null,
+            publisherSlug: 'acme',
+            publisherVerified: false,
+            latestVersion: '1.0.0',
+            manifest,
+            permissions: [],
+            installCount: 0,
+            avgRating: null,
+            ratingCount: 0,
+            priceCredits: null,
+            createdAt: '2026-01-01T00:00:00Z',
+          }),
+        );
+        return;
+      }
+      res.statusCode = 404;
+      res.end(JSON.stringify({ error: { code: 'NOT_FOUND', message: 'not found' } }));
+    });
+    servers.push(server);
+    return listen(server);
+  }
+
+  it(
+    'invokes the provider baseUrl when the agent has a grant and the manifest declares an http provider',
+    async () => {
+      // assertSafeWebhookUrl rejects loopback/private addresses (real SSRF guard,
+      // same one webhook-send uses) — so, like workflow-executor.test.ts's tool
+      // steps, the actual provider endpoint has to be a real external host, not a
+      // local server. postman-echo.com echoes the posted JSON back under `json`.
+      const fixture = await withFixture();
+      const pluginId = randomUUID();
+      const mktPort = await startMarketplaceServer(pluginId, {
+        provider: { type: 'http', baseUrl: 'https://postman-echo.com/post' },
+      });
+      const ctx = ctxWithMarketplaceUrl(mktPort);
+
+      await new PluginGrantService(dbCtx.db).grant(fixture.agentId, pluginId, fixture.userId);
+
+      const result = await executePluginStep(ctx, fixture.agentId, pluginId, { foo: 'bar' });
+      expect(result.statusCode).toBe(200);
+      expect((result.body as { json?: unknown }).json).toEqual({ foo: 'bar' });
+    },
+    15000,
+  );
+
+  it('throws PermissionDeniedError when the agent has no grant for the plugin', async () => {
+    const fixture = await withFixture();
+    const pluginId = randomUUID();
+    const mktPort = await startMarketplaceServer(pluginId, { provider: { type: 'http', baseUrl: 'https://postman-echo.com/post' } });
+    const ctx = ctxWithMarketplaceUrl(mktPort);
+
+    await expect(executePluginStep(ctx, fixture.agentId, pluginId, {})).rejects.toThrow(PermissionDeniedError);
+  });
+
+  it('throws NotFoundError when the plugin does not exist in Marketplace', async () => {
+    const fixture = await withFixture();
+    const pluginId = randomUUID();
+    const mktPort = await startMarketplaceServer(randomUUID(), null); // registers a different id
+    const ctx = ctxWithMarketplaceUrl(mktPort);
+
+    await new PluginGrantService(dbCtx.db).grant(fixture.agentId, pluginId, fixture.userId);
+    await expect(executePluginStep(ctx, fixture.agentId, pluginId, {})).rejects.toThrow(NotFoundError);
+  });
+
+  it('throws ValidationError when the plugin manifest does not declare an http provider', async () => {
+    const fixture = await withFixture();
+    const pluginId = randomUUID();
+    const mktPort = await startMarketplaceServer(pluginId, { configSchema: [] }); // no `provider` field
+    const ctx = ctxWithMarketplaceUrl(mktPort);
+
+    await new PluginGrantService(dbCtx.db).grant(fixture.agentId, pluginId, fixture.userId);
+    await expect(executePluginStep(ctx, fixture.agentId, pluginId, {})).rejects.toThrow(ValidationError);
+  });
+});

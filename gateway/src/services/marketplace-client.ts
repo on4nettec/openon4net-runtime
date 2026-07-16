@@ -8,7 +8,11 @@ export interface MarketplacePluginSummary {
   publisherSlug: string;
   publisherVerified: boolean;
   latestVersion: string | null;
-  manifest: { configSchema?: { key: string; label: string; type: string }[] } | null;
+  manifest: {
+    configSchema?: { key: string; label: string; type: string }[];
+    /** RT-079 — declares this plugin as a thin HTTP-provider wrapper, invokable from a Workflow's `plugin` step. */
+    provider?: { type: 'http'; baseUrl: string };
+  } | null;
   /** Declared permissions of the latest approved version (MKT-020) — shown as a consent prompt before install. */
   permissions: string[];
   installCount: number;

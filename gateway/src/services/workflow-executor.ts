@@ -5,6 +5,7 @@ import { AgentService } from './agent-service.js';
 import { ApprovalService } from './approval-service.js';
 import { ChatService } from './chat-service.js';
 import { executeTool } from './tool-dispatcher.js';
+import { executePluginStep } from './plugin-invoker.js';
 import { WorkflowRunService, type WorkflowRun } from './workflow-run-service.js';
 import { WorkflowService } from './workflow-service.js';
 
@@ -156,6 +157,12 @@ export class WorkflowExecutor {
 
     if (step.type === 'tool') {
       return executeTool(step, this.ctx);
+    }
+
+    if (step.type === 'plugin') {
+      const agent = await new AgentService(this.ctx.db).findByRole(organizationId, step.agentRole);
+      if (!agent) throw new ValidationError(`No active agent with role "${step.agentRole}" found for this step`);
+      return executePluginStep(this.ctx, agent.id, step.pluginId, step.params);
     }
 
     if (step.type === 'parallel') {
