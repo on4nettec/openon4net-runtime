@@ -50,10 +50,15 @@ export async function cleanupTestFixture(db: Db, organizationId: string): Promis
   await db.query(`DELETE FROM approval_queue WHERE organization_id = $1`, [organizationId]);
   await db.query(`DELETE FROM skill_proposals WHERE organization_id = $1`, [organizationId]);
   await db.query(`DELETE FROM skills WHERE organization_id = $1`, [organizationId]);
-  // workflows.created_by_user_id / webhook_endpoints.created_by_user_id have
-  // no ON DELETE CASCADE, so both must go before users.
+  // workflows.created_by_user_id / webhook_endpoints.created_by_user_id /
+  // agent_plugin_grants.granted_by_user_id have no ON DELETE CASCADE, so all
+  // three must go before users.
   await db.query(`DELETE FROM workflows WHERE organization_id = $1`, [organizationId]); // cascades workflow_runs, workflow_run_steps
   await db.query(`DELETE FROM webhook_endpoints WHERE organization_id = $1`, [organizationId]);
+  await db.query(
+    `DELETE FROM agent_plugin_grants WHERE agent_id IN (SELECT id FROM agents WHERE organization_id = $1)`,
+    [organizationId],
+  );
   await db.query(`DELETE FROM users WHERE organization_id = $1`, [organizationId]);
-  await db.query(`DELETE FROM organizations WHERE id = $1`, [organizationId]); // cascades workspaces, agents, agent_skill_grants, agent_messages
+  await db.query(`DELETE FROM organizations WHERE id = $1`, [organizationId]); // cascades workspaces, agents, agent_skill_grants, agent_plugin_grants, agent_messages
 }

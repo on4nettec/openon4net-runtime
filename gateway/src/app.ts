@@ -34,6 +34,7 @@ import { registerReportRoutes } from './routes/reports.js';
 import { registerInsightRoutes } from './routes/insights.js';
 import { registerWebhookRoutes } from './routes/webhooks.js';
 import { registerSsoRoutes } from './routes/sso.js';
+import { registerPluginGrantRoutes } from './routes/plugin-grants.js';
 
 export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
   const app = Fastify({ logger: true });
@@ -90,6 +91,7 @@ export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
   registerInsightRoutes(app, ctx);
   registerWebhookRoutes(app, ctx);
   registerSsoRoutes(app, ctx);
+  registerPluginGrantRoutes(app, ctx);
 
   return app;
 }
