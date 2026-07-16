@@ -8,6 +8,7 @@ import { createTestContext } from '../test-support/context.js';
 import { createTestEnv } from '../test-support/env.js';
 import { createTestFixture, cleanupTestFixture, type TestFixture } from '../test-support/fixtures.js';
 import { PluginGrantService } from './plugin-grant-service.js';
+import { PluginSchemaService } from './plugin-schema-service.js';
 import { executePluginStep } from './plugin-invoker.js';
 
 /**
@@ -103,9 +104,29 @@ describe('executePluginStep (RT-079)', () => {
 
       await new PluginGrantService(dbCtx.db).grant(fixture.agentId, pluginId, fixture.userId);
 
-      const result = await executePluginStep(ctx, fixture.agentId, pluginId, { foo: 'bar' });
+      const result = await executePluginStep(ctx, fixture.organizationId, fixture.agentId, pluginId, { foo: 'bar' });
       expect(result.statusCode).toBe(200);
-      expect((result.body as { json?: unknown }).json).toEqual({ foo: 'bar' });
+      // RT-076: params get merged with prior persisted state (empty here — nothing written yet) as `_state`.
+      expect((result.body as { json?: unknown }).json).toEqual({ foo: 'bar', _state: {} });
+    },
+    15000,
+  );
+
+  it(
+    'RT-076: includes prior persisted state as `_state` in the outgoing request',
+    async () => {
+      const fixture = await withFixture();
+      const pluginId = randomUUID();
+      const mktPort = await startMarketplaceServer(pluginId, {
+        provider: { type: 'http', baseUrl: 'https://postman-echo.com/post' },
+      });
+      const ctx = ctxWithMarketplaceUrl(mktPort);
+
+      await new PluginGrantService(dbCtx.db).grant(fixture.agentId, pluginId, fixture.userId);
+      await new PluginSchemaService(dbCtx.db).writeAll(fixture.organizationId, pluginId, { visitCount: 7 });
+
+      const result = await executePluginStep(ctx, fixture.organizationId, fixture.agentId, pluginId, { foo: 'bar' });
+      expect((result.body as { json?: unknown }).json).toEqual({ foo: 'bar', _state: { visitCount: 7 } });
     },
     15000,
   );
@@ -116,7 +137,7 @@ describe('executePluginStep (RT-079)', () => {
     const mktPort = await startMarketplaceServer(pluginId, { provider: { type: 'http', baseUrl: 'https://postman-echo.com/post' } });
     const ctx = ctxWithMarketplaceUrl(mktPort);
 
-    await expect(executePluginStep(ctx, fixture.agentId, pluginId, {})).rejects.toThrow(PermissionDeniedError);
+    await expect(executePluginStep(ctx, fixture.organizationId, fixture.agentId, pluginId, {})).rejects.toThrow(PermissionDeniedError);
   });
 
   it('throws NotFoundError when the plugin does not exist in Marketplace', async () => {
@@ -126,7 +147,7 @@ describe('executePluginStep (RT-079)', () => {
     const ctx = ctxWithMarketplaceUrl(mktPort);
 
     await new PluginGrantService(dbCtx.db).grant(fixture.agentId, pluginId, fixture.userId);
-    await expect(executePluginStep(ctx, fixture.agentId, pluginId, {})).rejects.toThrow(NotFoundError);
+    await expect(executePluginStep(ctx, fixture.organizationId, fixture.agentId, pluginId, {})).rejects.toThrow(NotFoundError);
   });
 
   it('throws ValidationError when the plugin manifest does not declare an http provider', async () => {
@@ -136,6 +157,6 @@ describe('executePluginStep (RT-079)', () => {
     const ctx = ctxWithMarketplaceUrl(mktPort);
 
     await new PluginGrantService(dbCtx.db).grant(fixture.agentId, pluginId, fixture.userId);
-    await expect(executePluginStep(ctx, fixture.agentId, pluginId, {})).rejects.toThrow(ValidationError);
+    await expect(executePluginStep(ctx, fixture.organizationId, fixture.agentId, pluginId, {})).rejects.toThrow(ValidationError);
   });
 });

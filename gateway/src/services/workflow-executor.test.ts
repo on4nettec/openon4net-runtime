@@ -266,7 +266,7 @@ describe('WorkflowExecutor', () => {
       expect(run.status).toBe('success');
       const stepResult = run.context['p1'] as { statusCode: number; body: { json?: unknown } };
       expect(stepResult.statusCode).toBe(200);
-      expect(stepResult.body.json).toEqual({ hello: 'world' });
+      expect(stepResult.body.json).toEqual({ hello: 'world', _state: {} });
     },
     15000,
   );

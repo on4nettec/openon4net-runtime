@@ -162,7 +162,7 @@ export class WorkflowExecutor {
     if (step.type === 'plugin') {
       const agent = await new AgentService(this.ctx.db).findByRole(organizationId, step.agentRole);
       if (!agent) throw new ValidationError(`No active agent with role "${step.agentRole}" found for this step`);
-      return executePluginStep(this.ctx, agent.id, step.pluginId, step.params);
+      return executePluginStep(this.ctx, organizationId, agent.id, step.pluginId, step.params);
     }
 
     if (step.type === 'parallel') {
