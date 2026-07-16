@@ -9,6 +9,7 @@ import { createTestEnv } from '../test-support/env.js';
 import { createTestFixture, cleanupTestFixture, type TestFixture } from '../test-support/fixtures.js';
 import { PluginGrantService } from './plugin-grant-service.js';
 import { PluginSchemaService } from './plugin-schema-service.js';
+import { LocalPluginService } from './local-plugin-service.js';
 import { executePluginStep } from './plugin-invoker.js';
 
 /**
@@ -158,5 +159,45 @@ describe('executePluginStep (RT-079)', () => {
 
     await new PluginGrantService(dbCtx.db).grant(fixture.agentId, pluginId, fixture.userId);
     await expect(executePluginStep(ctx, fixture.organizationId, fixture.agentId, pluginId, {})).rejects.toThrow(ValidationError);
+  });
+
+  it(
+    'RT-077: resolves a self-hosted local plugin without ever needing Marketplace configured',
+    async () => {
+      const fixture = await withFixture();
+      const local = await new LocalPluginService(dbCtx.db).create(
+        fixture.organizationId,
+        { name: 'Local echo', manifest: { provider: { type: 'http', baseUrl: 'https://postman-echo.com/post' } } },
+        fixture.userId,
+      );
+      await new PluginGrantService(dbCtx.db).grant(fixture.agentId, local.id, fixture.userId);
+
+      // No marketplace server started at all, and MARKETPLACE_SERVICE_URL is
+      // explicitly unset — if this ever fell through to the Marketplace path,
+      // it would throw the "not configured" error instead of succeeding.
+      const ctx: AppContext = { ...dbCtx, env: createTestEnv({ MARKETPLACE_SERVICE_URL: undefined }) };
+
+      const result = await executePluginStep(ctx, fixture.organizationId, fixture.agentId, local.id, { foo: 'bar' });
+      expect(result.statusCode).toBe(200);
+      expect((result.body as { json?: unknown }).json).toEqual({ foo: 'bar', _state: {} });
+    },
+    15000,
+  );
+
+  it('RT-077: a local plugin registered for one organization is invisible to another organization (falls through to Marketplace, then 404s there too)', async () => {
+    const fixtureA = await withFixture();
+    const fixtureB = await withFixture();
+    const local = await new LocalPluginService(dbCtx.db).create(
+      fixtureA.organizationId,
+      { name: 'Org A only', manifest: { provider: { type: 'http', baseUrl: 'https://postman-echo.com/post' } } },
+      fixtureA.userId,
+    );
+    await new PluginGrantService(dbCtx.db).grant(fixtureB.agentId, local.id, fixtureB.userId);
+    // Not found locally for org B -> falls through to Marketplace, which
+    // genuinely doesn't know this id either (registers a *different* id).
+    const mktPort = await startMarketplaceServer(randomUUID(), null);
+    const ctx = ctxWithMarketplaceUrl(mktPort);
+
+    await expect(executePluginStep(ctx, fixtureB.organizationId, fixtureB.agentId, local.id, {})).rejects.toThrow(NotFoundError);
   });
 });
