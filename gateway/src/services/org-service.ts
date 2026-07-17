@@ -12,6 +12,7 @@ interface OrgRow {
   settings: Record<string, unknown>;
   activation_type: Organization['activationType'];
   max_users: number | null;
+  language: string;
   created_at: string;
   updated_at: string;
 }
@@ -47,6 +48,7 @@ function toOrganization(row: OrgRow): Organization {
     settings: row.settings,
     activationType: row.activation_type,
     maxUsers: row.max_users,
+    language: row.language,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -89,17 +91,19 @@ export class OrgService {
    * several independent features now each own one key under it
    * (publisherSlug/publisherDisplayName for MKT-022, auditRetentionDays/
    * auditChainGenesis for RT-054/055), so one feature's partial update must
-   * not clobber another's key.
+   * not clobber another's key. `language` (RT-083) IS editable here — it's
+   * the org-level i18n default, an admin-facing setting same as `name`.
    */
   async update(organizationId: string, input: OrganizationUpdateInput): Promise<Organization> {
     const { rows } = await this.db.query<OrgRow>(
       `UPDATE organizations
        SET name = COALESCE($1, name),
            settings = settings || $2::jsonb,
+           language = COALESCE($3, language),
            updated_at = NOW()
-       WHERE id = $3
+       WHERE id = $4
        RETURNING *`,
-      [input.name ?? null, JSON.stringify(input.settings ?? {}), organizationId],
+      [input.name ?? null, JSON.stringify(input.settings ?? {}), input.language ?? null, organizationId],
     );
     const row = rows[0];
     if (!row) throw new NotFoundError('Organization', organizationId);

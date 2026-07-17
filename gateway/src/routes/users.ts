@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
-import { UserCreateSchema, UserUpdateSchema } from '@o2n/shared';
-import { ValidationError } from '@o2n/governance';
+import { UserCreateSchema, UserUpdateSchema, SelfLanguageUpdateSchema } from '@o2n/shared';
+import { NotFoundError, ValidationError } from '@o2n/governance';
 import type { AppContext } from '../context.js';
 import { requirePermission } from '../lib/require-permission.js';
 import { UserService } from '../services/user-service.js';
@@ -19,6 +19,21 @@ export function registerUserRoutes(app: FastifyInstance, ctx: AppContext): void 
   app.get('/v1/users', async (request) => {
     requirePermission(request, 'users:read');
     return userService.list(request.auth.organizationId);
+  });
+
+  // RT-083 — any signed-in user (no users:read needed, this is about
+  // themselves). user.language === null is also the frontend's signal to
+  // show the first-login language picker before continuing past login.
+  app.get('/v1/users/me', async (request) => {
+    const user = await userService.findById(request.auth.userId);
+    if (!user) throw new NotFoundError('User', request.auth.userId);
+    return user;
+  });
+
+  app.patch('/v1/users/me', async (request) => {
+    const parsed = SelfLanguageUpdateSchema.safeParse(request.body);
+    if (!parsed.success) throw new ValidationError('Invalid payload', parsed.error.flatten());
+    return userService.updateOwnLanguage(request.auth.userId, parsed.data.language);
   });
 
   app.post('/v1/users', async (request) => {

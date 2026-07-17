@@ -49,6 +49,9 @@ const PUBLIC_ROUTES = new Set([
   '/v1/auth/oidc/callback',
   '/v1/auth/saml/start',
   '/v1/auth/saml/acs',
+  // RT-083: the first-login language picker needs UI strings before a
+  // session exists (same reasoning as /v1/auth/methods above).
+  '/v1/locales/:lang',
 ]);
 
 export function registerAuth(app: FastifyInstance, jwtSecret: string, permissionService: PermissionService): void {

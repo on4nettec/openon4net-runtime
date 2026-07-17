@@ -37,6 +37,9 @@ export default function SettingsPage() {
   const [orgError, setOrgError] = useState<string | null>(null);
   const [editingOrg, setEditingOrg] = useState(false);
   const [orgName, setOrgName] = useState('');
+  // RT-083 — org-level i18n default (per-user override lives on /agents's
+  // first-login picker instead, since that's a self-service, non-admin action).
+  const [orgLanguage, setOrgLanguage] = useState('en');
   const [savingOrg, setSavingOrg] = useState(false);
   const [orgSaveError, setOrgSaveError] = useState<string | null>(null);
 
@@ -93,6 +96,7 @@ export default function SettingsPage() {
       .then((org) => {
         setOrganization(org);
         setOrgName(org.name);
+        setOrgLanguage(org.language);
         const retention = org.settings.auditRetentionDays;
         setAuditRetentionDays(typeof retention === 'number' ? String(retention) : '');
       })
@@ -164,7 +168,7 @@ export default function SettingsPage() {
     setSavingOrg(true);
     setOrgSaveError(null);
     try {
-      await api.updateOrganization({ name: orgName });
+      await api.updateOrganization({ name: orgName, language: orgLanguage });
       setEditingOrg(false);
       await loadOrganization();
     } catch (err) {
@@ -294,10 +298,11 @@ export default function SettingsPage() {
                 <Row label="Slug" value={organization.slug} />
                 <Row label="Plan" value={organization.plan} />
                 <Row label="Status" value={organization.status} />
+                <Row label="Default language" value={organization.language} />
 
                 <div style={{ borderTop: '1px solid #2c3038', paddingTop: 14, marginTop: 4 }}>
                   <button type="button" onClick={() => setEditingOrg((v) => !v)}>
-                    {editingOrg ? 'Cancel' : 'Edit name'}
+                    {editingOrg ? 'Cancel' : 'Edit name/language'}
                   </button>
                 </div>
 
@@ -310,6 +315,16 @@ export default function SettingsPage() {
                     <label>
                       Name
                       <input value={orgName} onChange={(e) => setOrgName(e.target.value)} required />
+                    </label>
+                    <label>
+                      Default language (per-user override happens on first login)
+                      <select value={orgLanguage} onChange={(e) => setOrgLanguage(e.target.value)}>
+                        <option value="en">English</option>
+                        <option value="fa">فارسی</option>
+                        <option value="ar">العربية</option>
+                        <option value="fr">Français</option>
+                        <option value="es">Español</option>
+                      </select>
                     </label>
                     <button type="submit" disabled={savingOrg}>
                       {savingOrg ? 'Saving…' : 'Save'}

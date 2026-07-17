@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import type { Agent } from '@o2n/shared';
 import { api, loadSession, streamChat, ApiError } from '@/lib/api-client';
+import { applyDocumentDirection, isRtlLanguage } from '@/lib/i18n';
 
 interface DisplayMessage {
   role: 'user' | 'agent';
@@ -24,6 +25,10 @@ export default function AgentChatPage() {
   const [sending, setSending] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [rateLimit, setRateLimit] = useState<{ usedThisMinute: number; limitPerMinute: number } | null>(null);
+  // RT-083 — real RTL/LTR, not just cosmetic text-align: applied to
+  // document.documentElement so flex layout (message alignSelf, input row)
+  // physically mirrors, not just the text direction within a bubble.
+  const [effectiveLanguage, setEffectiveLanguage] = useState('en');
   const bottomRef = useRef<HTMLDivElement>(null);
 
   function loadRateLimit() {
@@ -58,6 +63,17 @@ export default function AgentChatPage() {
       setNotice(err instanceof ApiError ? err.message : 'Failed to load conversation history'),
     );
     loadRateLimit();
+
+    // RT-083 — effective language is user.language ?? organization.language;
+    // fetched fresh (not cached on session) since either can change without
+    // a re-login (settings page, or the check-in scheduler for the org).
+    Promise.all([api.getOrganization(), api.getMe()])
+      .then(([org, me]) => {
+        const lang = me.language ?? org.language;
+        setEffectiveLanguage(lang);
+        applyDocumentDirection(lang);
+      })
+      .catch(() => {});
   }, [agentId, router]);
 
   useEffect(() => {
@@ -140,9 +156,9 @@ export default function AgentChatPage() {
   }
 
   return (
-    <div>
+    <div dir={isRtlLanguage(effectiveLanguage) ? 'rtl' : 'ltr'}>
       <div className="topbar">
-        <Link href="/agents">← Agents</Link>
+        <Link href="/agents">{isRtlLanguage(effectiveLanguage) ? 'Agents →' : '← Agents'}</Link>
         <nav>
           <strong>{agent?.name ?? 'Loading…'}</strong>
           {rateLimit ? (

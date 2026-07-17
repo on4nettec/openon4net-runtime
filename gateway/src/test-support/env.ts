@@ -31,6 +31,7 @@ export function createTestEnv(overrides: Partial<Env> = {}): Env {
     BACKUP_DIR: './backups',
     BACKUP_INTERVAL_HOURS: 24,
     BACKUP_RETENTION_DAYS: 30,
+    LOCALE_AI_MODEL: 'claude-3-5-haiku-20241022',
     authMethods: ['dev_api_key'],
     oauthProviders: [],
     ...overrides,

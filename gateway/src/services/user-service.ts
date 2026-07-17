@@ -12,6 +12,7 @@ interface UserRow {
   organization_id: string;
   settings: Record<string, unknown>;
   is_active: boolean;
+  language: string | null;
   created_at: string;
 }
 
@@ -24,6 +25,7 @@ function toUser(row: UserRow): User {
     organizationId: row.organization_id,
     settings: row.settings,
     isActive: row.is_active,
+    language: row.language,
     createdAt: row.created_at,
   };
 }
@@ -179,5 +181,23 @@ export class UserService {
       if (!updated) throw new Error('Update did not return a row');
       return toUser(updated);
     });
+  }
+
+  /**
+   * RT-083 — self-service, deliberately NOT routed through update() above:
+   * update() requires organizationId + is admin-only via routes/users.ts's
+   * PATCH /v1/users/:id (which also explicitly blocks self-PATCH). Any
+   * signed-in user, of any role, can set their own language preference —
+   * scoped purely by userId from the JWT, no organizationId/permission
+   * check needed since a user can only ever set their own row.
+   */
+  async updateOwnLanguage(userId: string, language: string): Promise<User> {
+    const { rows } = await this.db.query<UserRow>(
+      `UPDATE users SET language = $1 WHERE id = $2 RETURNING *`,
+      [language, userId],
+    );
+    const row = rows[0];
+    if (!row) throw new NotFoundError('User', userId);
+    return toUser(row);
   }
 }

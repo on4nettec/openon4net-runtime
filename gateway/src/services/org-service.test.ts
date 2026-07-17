@@ -94,4 +94,26 @@ describe('OrgService', () => {
       expect(rows[0]?.max_users).toBe(1);
     });
   });
+
+  describe('language (RT-083)', () => {
+    it('new organizations default to "en"', async () => {
+      const fixture = await withFixture();
+      const orgService = new OrgService(db);
+      const org = await orgService.getById(fixture.organizationId);
+      expect(org.language).toBe('en');
+    });
+
+    it('update can set the org-level default language independently of name/settings', async () => {
+      const fixture = await withFixture();
+      const orgService = new OrgService(db);
+      const before = await orgService.getById(fixture.organizationId);
+
+      const updated = await orgService.update(fixture.organizationId, { language: 'fa' });
+      expect(updated.language).toBe('fa');
+      expect(updated.name).toBe(before.name);
+
+      const refreshed = await orgService.getById(fixture.organizationId);
+      expect(refreshed.language).toBe('fa');
+    });
+  });
 });

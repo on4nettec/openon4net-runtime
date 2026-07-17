@@ -137,6 +137,14 @@ const EnvSchema = z
     BACKUP_DIR: z.string().min(1).default('./backups'),
     BACKUP_INTERVAL_HOURS: z.coerce.number().int().positive().default(24),
     BACKUP_RETENTION_DAYS: z.coerce.number().int().positive().default(30),
+
+    // --- RT-083: i18n — deliberately separate from LLM_API_KEY/LLM_PROVIDER
+    // above (org-scoped BYOK chat), same reasoning Control Plane's CP-028
+    // used: locale generation is a deployment-global, generate-once-and-
+    // cache-to-disk operation, not a per-org chat cost. 'en' (the reference
+    // locale) always works with this unset. ---
+    LOCALE_AI_API_KEY: z.string().optional(),
+    LOCALE_AI_MODEL: z.string().default('claude-3-5-haiku-20241022'),
   })
   .superRefine((env, ctx) => {
     const methods = csv(env.AUTH_METHODS_ENABLED);

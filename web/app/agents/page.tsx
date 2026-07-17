@@ -6,6 +6,17 @@ import Link from 'next/link';
 import type { Agent, KpiDefinition, Organization, User, Workspace } from '@o2n/shared';
 import { AGENT_ROLE_CATALOG } from '@o2n/shared';
 import { api, loadSession, clearSession, ApiError, type Session } from '@/lib/api-client';
+import { applyDocumentDirection } from '@/lib/i18n';
+
+// RT-083 — offered up front without typing a code by hand; the gateway can
+// actually generate any ISO-shaped code on demand (GET /v1/locales/:lang).
+const LANGUAGE_OPTIONS: { code: string; label: string }[] = [
+  { code: 'en', label: 'English' },
+  { code: 'fa', label: 'فارسی' },
+  { code: 'ar', label: 'العربية' },
+  { code: 'fr', label: 'Français' },
+  { code: 'es', label: 'Español' },
+];
 
 const OTHER_ROLE = '__other__';
 
@@ -29,6 +40,13 @@ export default function AgentsPage() {
   // at exactly one user, RT-081). Defaults to enabled while organization is
   // still loading so the button doesn't flash in and back out.
   const agentAccessEnabled = organization?.activationType !== 'personal';
+  // RT-083 — me.language === null means "no preference chosen yet" (first
+  // login), which drives the picker below. Effective language everywhere
+  // else is me.language ?? organization.language.
+  const [me, setMe] = useState<User | null>(null);
+  const [pickedLanguage, setPickedLanguage] = useState('en');
+  const [savingLanguage, setSavingLanguage] = useState(false);
+  const needsLanguagePicker = me !== null && me.language === null;
   const [agents, setAgents] = useState<Agent[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -87,7 +105,36 @@ export default function AgentsPage() {
       .getOrganization()
       .then(setOrganization)
       .catch(() => {});
+    // RT-083 — first-login language picker: a null language means this user
+    // has never chosen one.
+    api
+      .getMe()
+      .then(setMe)
+      .catch(() => {});
   }, [router]);
+
+  // RT-083 — real RTL/LTR: applied once both organization and me are known
+  // (a dedicated effect, not inline in the fetch callbacks above, so
+  // whichever of the two requests resolves last doesn't clobber the other's
+  // result with a stale closure).
+  useEffect(() => {
+    if (me && organization) {
+      applyDocumentDirection(me.language ?? organization.language);
+    }
+  }, [me, organization]);
+
+  async function handleChooseLanguage() {
+    setSavingLanguage(true);
+    try {
+      const updated = await api.updateMyLanguage(pickedLanguage);
+      setMe(updated);
+      applyDocumentDirection(updated.language ?? 'en');
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Failed to save language preference');
+    } finally {
+      setSavingLanguage(false);
+    }
+  }
 
   async function refresh() {
     setLoading(true);
@@ -287,6 +334,32 @@ export default function AgentsPage() {
   }
 
   if (!session) return null;
+
+  // RT-083 — blocks until a language is chosen, matching meeting 5's
+  // "اولین ورود کاربر یک انتخاب زبان نشون می‌ده" (first login shows a
+  // language picker). Renders instead of the normal page, not on top of it.
+  if (needsLanguagePicker) {
+    return (
+      <div className="page" style={{ maxWidth: 420, marginTop: 80 }}>
+        <div className="card">
+          <h2 style={{ marginTop: 0 }}>Choose your language</h2>
+          {error ? <div className="error">{error}</div> : null}
+          <div className="field">
+            <select value={pickedLanguage} onChange={(e) => setPickedLanguage(e.target.value)}>
+              {LANGUAGE_OPTIONS.map((opt) => (
+                <option key={opt.code} value={opt.code}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <button onClick={handleChooseLanguage} disabled={savingLanguage} style={{ width: '100%' }}>
+            {savingLanguage ? 'Saving…' : 'Continue'}
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div>

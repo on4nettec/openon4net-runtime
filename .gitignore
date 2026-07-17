@@ -7,3 +7,6 @@ coverage/
 .env
 .env.local
 *.tsbuildinfo
+# RT-083 — AI-generated locale JSON, cached on first request. en.json (the
+# reference) stays committed; everything under generated/ is regenerable.
+gateway/locales/generated/

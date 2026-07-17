@@ -1,0 +1,9 @@
+{
+  "chat.title": "Chat",
+  "chat.backToAgents": "Back to Agents",
+  "chat.inputPlaceholder": "Type a message…",
+  "chat.send": "Send",
+  "settings.chooseLanguage": "Choose your language",
+  "settings.orgLanguage": "Organization default language",
+  "login.chooseLanguage": "Choose your language to continue"
+}

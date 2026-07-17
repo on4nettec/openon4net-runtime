@@ -190,4 +190,35 @@ describe('UserService', () => {
       expect(user.id).toBeTruthy();
     });
   });
+
+  describe('language (RT-083)', () => {
+    it('a newly created user has no language preference (null = inherit org default / first-login signal)', async () => {
+      const fixture = await withFixture();
+      await seedRole(db, fixture.organizationId, 'viewer');
+      const userService = new UserService(db);
+
+      const user = await userService.create(fixture.organizationId, {
+        email: `${uniqueSlug('user')}@example.com`,
+        name: 'Fresh User',
+        role: 'viewer',
+      });
+      expect(user.language).toBeNull();
+    });
+
+    it('updateOwnLanguage sets a personal override, scoped to that user only', async () => {
+      const fixture = await withFixture();
+      const userService = new UserService(db);
+
+      const updated = await userService.updateOwnLanguage(fixture.userId, 'fr');
+      expect(updated.language).toBe('fr');
+
+      const refreshed = await userService.findById(fixture.userId);
+      expect(refreshed?.language).toBe('fr');
+    });
+
+    it('updateOwnLanguage throws NotFoundError for an unknown user id', async () => {
+      const userService = new UserService(db);
+      await expect(userService.updateOwnLanguage('00000000-0000-0000-0000-000000000000', 'fr')).rejects.toThrow();
+    });
+  });
 });

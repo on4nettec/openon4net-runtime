@@ -668,8 +668,19 @@ export const api = {
 
   getOrganization: () => request<Organization>('/v1/organization'),
 
-  updateOrganization: (input: { name?: string; settings?: Record<string, unknown> }) =>
+  updateOrganization: (input: { name?: string; settings?: Record<string, unknown>; language?: string }) =>
     request<Organization>('/v1/organization', { method: 'PATCH', body: JSON.stringify(input) }),
+
+  // RT-083 — i18n. getMe() also doubles as the first-login check: a null
+  // language means the frontend should show the language picker before
+  // continuing past login.
+  getMe: () => request<User>('/v1/users/me'),
+
+  updateMyLanguage: (language: string) =>
+    request<User>('/v1/users/me', { method: 'PATCH', body: JSON.stringify({ language }) }),
+
+  getLocale: (lang: string) =>
+    request<{ language: string; strings: Record<string, string>; source: string }>(`/v1/locales/${lang}`),
 
   getSsoConfig: () =>
     request<{ protocol: 'oidc' | 'saml'; config: Record<string, string>; hasSecret: boolean; isEnabled: boolean } | null>(
