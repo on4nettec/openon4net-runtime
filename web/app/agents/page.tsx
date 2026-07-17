@@ -3,7 +3,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import type { Agent, KpiDefinition, User, Workspace } from '@o2n/shared';
+import type { Agent, KpiDefinition, Organization, User, Workspace } from '@o2n/shared';
 import { AGENT_ROLE_CATALOG } from '@o2n/shared';
 import { api, loadSession, clearSession, ApiError, type Session } from '@/lib/api-client';
 
@@ -24,6 +24,11 @@ interface AgentAccessBinding {
 export default function AgentsPage() {
   const router = useRouter();
   const [session, setSession] = useState<Session | null>(null);
+  const [organization, setOrganization] = useState<Organization | null>(null);
+  // RT-082 — Agent Access is meaningless for a personal activation (capped
+  // at exactly one user, RT-081). Defaults to enabled while organization is
+  // still loading so the button doesn't flash in and back out.
+  const agentAccessEnabled = organization?.activationType !== 'personal';
   const [agents, setAgents] = useState<Agent[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -74,6 +79,13 @@ export default function AgentsPage() {
     api
       .listWorkspaces()
       .then(setWorkspaces)
+      .catch(() => {});
+    // RT-082 — fetched fresh rather than cached on the session, since
+    // activationType can change out-of-band via Control Plane's hourly
+    // check-in (activation-scheduler.ts), not just at login.
+    api
+      .getOrganization()
+      .then(setOrganization)
       .catch(() => {});
   }, [router]);
 
@@ -420,7 +432,7 @@ export default function AgentsPage() {
                       <button className="secondary" onClick={() => toggleKpis(agent)}>
                         {kpisOpen ? 'Cancel' : 'KPIs'}
                       </button>
-                      {session.role === 'admin' ? (
+                      {session.role === 'admin' && agentAccessEnabled ? (
                         <button className="secondary" onClick={() => toggleAccess(agent)}>
                           {accessOpen ? 'Cancel' : 'Access'}
                         </button>

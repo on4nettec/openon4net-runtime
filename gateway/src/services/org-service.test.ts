@@ -36,6 +36,11 @@ describe('OrgService', () => {
     expect(org.id).toBe(fixture.organizationId);
     expect(org.plan).toBe('starter');
     expect(org.status).toBe('active');
+    // RT-082 — getById() must surface activationType/maxUsers, not just the
+    // raw DB row: web/app/agents/page.tsx reads org.activationType from
+    // this exact call to decide whether to show Agent Access.
+    expect(org.activationType).toBe('organizational');
+    expect(org.maxUsers).toBeNull();
   });
 
   it('getById throws NotFoundError for an unknown id', async () => {

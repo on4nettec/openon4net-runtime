@@ -10,6 +10,8 @@ interface OrgRow {
   plan: Organization['plan'];
   status: Organization['status'];
   settings: Record<string, unknown>;
+  activation_type: Organization['activationType'];
+  max_users: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -43,6 +45,8 @@ function toOrganization(row: OrgRow): Organization {
     plan: row.plan,
     status: row.status,
     settings: row.settings,
+    activationType: row.activation_type,
+    maxUsers: row.max_users,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };

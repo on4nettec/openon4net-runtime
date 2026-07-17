@@ -4,7 +4,7 @@ import { ValidationError } from '@o2n/governance';
 import type { AppContext } from '../context.js';
 import { withTransaction } from '../db.js';
 import { requirePermission } from '../lib/require-permission.js';
-import { requireAgentAccessible } from '../lib/agent-access.js';
+import { requireAgentAccessible, assertAgentAccessFeatureEnabled } from '../lib/agent-access.js';
 import { getRateLimitStatus } from '../plugins/rate-limiter.js';
 import { AgentService } from '../services/agent-service.js';
 import { AgentAccessService, assertValidAccessRole } from '../services/agent-access-service.js';
@@ -239,12 +239,14 @@ export function registerAgentRoutes(app: FastifyInstance, ctx: AppContext): void
   // RT-024: agent access management (admin-only — see migrations/0014_agent_access.sql).
   app.get<{ Params: { id: string } }>('/v1/agents/:id/access', async (request) => {
     requirePermission(request, 'agents:access:grant');
+    await assertAgentAccessFeatureEnabled(ctx.db, request.auth.organizationId);
     await agentService.getById(request.auth.organizationId, request.params.id); // org-scope check, 404s otherwise
     return agentAccessService.listForAgent(request.auth.organizationId, request.params.id);
   });
 
   app.post<{ Params: { id: string } }>('/v1/agents/:id/access/grant', async (request) => {
     requirePermission(request, 'agents:access:grant');
+    await assertAgentAccessFeatureEnabled(ctx.db, request.auth.organizationId);
     await agentService.getById(request.auth.organizationId, request.params.id); // org-scope check, 404s otherwise
 
     const body = request.body as { userId?: unknown; accessRole?: unknown };
@@ -275,6 +277,7 @@ export function registerAgentRoutes(app: FastifyInstance, ctx: AppContext): void
 
   app.delete<{ Params: { id: string; userId: string } }>('/v1/agents/:id/access/:userId', async (request, reply) => {
     requirePermission(request, 'agents:access:revoke');
+    await assertAgentAccessFeatureEnabled(ctx.db, request.auth.organizationId);
     await agentService.getById(request.auth.organizationId, request.params.id); // org-scope check, 404s otherwise
 
     await withTransaction(ctx.db, async (client) => {
