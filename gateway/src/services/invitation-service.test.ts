@@ -129,4 +129,41 @@ describe('InvitationService', () => {
 
     await expect(invitationService.revoke(fixture.organizationId, '00000000-0000-0000-0000-000000000000')).rejects.toThrow();
   });
+
+  describe('seat limit enforcement (RT-081)', () => {
+    it('create rejects a new invitation when the org (personal) is already at its seat limit', async () => {
+      const fixture = await withFixture(); // fixture already seeded 1 active user
+      await seedRole(db, fixture.organizationId, 'viewer');
+      await db.query(`UPDATE organizations SET activation_type = 'personal', max_users = NULL WHERE id = $1`, [
+        fixture.organizationId,
+      ]);
+      const invitationService = new InvitationService(db);
+
+      await expect(
+        invitationService.create(fixture.organizationId, fixture.userId, {
+          email: `${uniqueSlug('invitee')}@example.com`,
+          role: 'viewer',
+        }),
+      ).rejects.toThrow(/personal activation/);
+    });
+
+    it('accept re-checks the seat limit at accept time, even when it passed at invite time', async () => {
+      const fixture = await withFixture(); // 1 existing user, org still organizational/unlimited at invite time
+      await seedRole(db, fixture.organizationId, 'viewer');
+      const invitationService = new InvitationService(db);
+      const { token } = await invitationService.create(fixture.organizationId, fixture.userId, {
+        email: `${uniqueSlug('invitee')}@example.com`,
+        role: 'viewer',
+      });
+
+      // Simulates the seat filling up between invite and accept.
+      await db.query(`UPDATE organizations SET activation_type = 'personal', max_users = NULL WHERE id = $1`, [
+        fixture.organizationId,
+      ]);
+
+      await expect(
+        invitationService.accept(token, { name: 'Late Arrival', password: 'a-real-password-123' }),
+      ).rejects.toThrow(/personal activation/);
+    });
+  });
 });

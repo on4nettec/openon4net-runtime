@@ -4,6 +4,7 @@ import type { InvitationAcceptInput, InvitationCreateInput, User } from '@o2n/sh
 import { NotFoundError, ValidationError } from '@o2n/governance';
 import { withTransaction, type Db } from '../db.js';
 import { resolveRoleId, resolveWorkspaceId } from './role-workspace-resolver.js';
+import { assertSeatAvailable } from './seat-limit-service.js';
 
 const TOKEN_TTL_SECONDS = 7 * 24 * 60 * 60; // 7 days — longer than magic-link's 15min since a human has to receive/act on this email
 
@@ -82,6 +83,10 @@ export class InvitationService {
     );
     if (existingUserRows[0]) throw new ValidationError(`A user with email ${input.email} already exists in this organization`);
 
+    // RT-081 — fail fast at invite-time too, not just at accept(): no point
+    // sending an invite that's guaranteed to bounce once the seat is full.
+    await assertSeatAvailable(this.db, organizationId);
+
     const token = randomBytes(32).toString('hex');
     const { rows } = await this.db.query<InvitationRow>(
       `INSERT INTO invitations (organization_id, email, role, workspace_id, invited_by_user_id, token_hash, expires_at)
@@ -130,6 +135,10 @@ export class InvitationService {
         [invitation.organization_id, invitation.email],
       );
       if (existingUserRows[0]) throw new ValidationError(`A user with email ${invitation.email} already exists in this organization`);
+
+      // RT-081 — the authoritative check (same transaction as the insert
+      // below), in case the seat filled up between invite-time and accept.
+      await assertSeatAvailable(client, invitation.organization_id);
 
       const roleId = await resolveRoleId(client, invitation.organization_id, invitation.role);
       const workspaceId = await resolveWorkspaceId(client, invitation.organization_id, invitation.workspace_id ?? undefined);

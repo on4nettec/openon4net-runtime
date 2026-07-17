@@ -11,6 +11,10 @@ export interface CheckInResult {
     governanceThresholds: { approvalThresholdCents: number };
   };
   featureFlags: Record<string, boolean>;
+  // RT-081 — Control Plane's CP-026 seat model: 'personal' allows exactly one
+  // Runtime user, 'organizational' allows up to maxUsers (null = unlimited).
+  activationType: 'personal' | 'organizational';
+  maxUsers: number | null;
 }
 
 /**

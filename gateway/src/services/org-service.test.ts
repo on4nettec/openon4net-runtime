@@ -63,4 +63,30 @@ describe('OrgService', () => {
     expect(updated.settings).toEqual({ theme: 'dark' });
     expect(updated.name).toBe(before.name);
   });
+
+  describe('updateActivationInfo (RT-081)', () => {
+    it('new organizations default to organizational / unlimited seats', async () => {
+      const fixture = await withFixture();
+      const { rows } = await db.query<{ activation_type: string; max_users: number | null }>(
+        `SELECT activation_type, max_users FROM organizations WHERE id = $1`,
+        [fixture.organizationId],
+      );
+      expect(rows[0]?.activation_type).toBe('organizational');
+      expect(rows[0]?.max_users).toBeNull();
+    });
+
+    it('persists what activation-scheduler.ts would write on a successful check-in', async () => {
+      const fixture = await withFixture();
+      const orgService = new OrgService(db);
+
+      await orgService.updateActivationInfo(fixture.organizationId, 'personal', 1);
+
+      const { rows } = await db.query<{ activation_type: string; max_users: number | null }>(
+        `SELECT activation_type, max_users FROM organizations WHERE id = $1`,
+        [fixture.organizationId],
+      );
+      expect(rows[0]?.activation_type).toBe('personal');
+      expect(rows[0]?.max_users).toBe(1);
+    });
+  });
 });

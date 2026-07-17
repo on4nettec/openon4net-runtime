@@ -115,4 +115,79 @@ describe('UserService', () => {
     );
     expect(rows[0]?.workspace_id).toBe(secondWorkspace.id);
   });
+
+  describe('seat limit enforcement (RT-081)', () => {
+    it('personal activation blocks creating a second user (fixture already has one)', async () => {
+      const fixture = await withFixture();
+      await db.query(`UPDATE organizations SET activation_type = 'personal', max_users = NULL WHERE id = $1`, [
+        fixture.organizationId,
+      ]);
+      const userService = new UserService(db);
+
+      await expect(
+        userService.create(fixture.organizationId, {
+          email: `${uniqueSlug('user')}@example.com`,
+          name: 'Second Person',
+          role: 'viewer',
+        }),
+      ).rejects.toThrow(/personal activation/);
+    });
+
+    it('organizational activation allows up to max_users, then rejects the next one', async () => {
+      const fixture = await withFixture(); // fixture already seeded 1 active user
+      await seedRole(db, fixture.organizationId, 'viewer');
+      await db.query(`UPDATE organizations SET activation_type = 'organizational', max_users = 2 WHERE id = $1`, [
+        fixture.organizationId,
+      ]);
+      const userService = new UserService(db);
+
+      // 1 existing (fixture) + this one = 2, at the cap.
+      await userService.create(fixture.organizationId, {
+        email: `${uniqueSlug('user')}@example.com`,
+        name: 'Second',
+        role: 'viewer',
+      });
+
+      await expect(
+        userService.create(fixture.organizationId, {
+          email: `${uniqueSlug('user')}@example.com`,
+          name: 'Third',
+          role: 'viewer',
+        }),
+      ).rejects.toThrow(/user limit of 2/);
+    });
+
+    it('max_users = null means unlimited even for organizational activation', async () => {
+      const fixture = await withFixture();
+      await seedRole(db, fixture.organizationId, 'viewer');
+      await db.query(`UPDATE organizations SET activation_type = 'organizational', max_users = NULL WHERE id = $1`, [
+        fixture.organizationId,
+      ]);
+      const userService = new UserService(db);
+
+      const user = await userService.create(fixture.organizationId, {
+        email: `${uniqueSlug('user')}@example.com`,
+        name: 'Unlimited',
+        role: 'viewer',
+      });
+      expect(user.id).toBeTruthy();
+    });
+
+    it('a deactivated user frees up their seat', async () => {
+      const fixture = await withFixture();
+      await seedRole(db, fixture.organizationId, 'viewer');
+      const userService = new UserService(db);
+      await userService.update(fixture.organizationId, fixture.userId, { isActive: false });
+      await db.query(`UPDATE organizations SET activation_type = 'personal', max_users = NULL WHERE id = $1`, [
+        fixture.organizationId,
+      ]);
+
+      const user = await userService.create(fixture.organizationId, {
+        email: `${uniqueSlug('user')}@example.com`,
+        name: 'Replacement',
+        role: 'viewer',
+      });
+      expect(user.id).toBeTruthy();
+    });
+  });
 });

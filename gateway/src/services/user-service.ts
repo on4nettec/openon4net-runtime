@@ -2,6 +2,7 @@ import type { User, UserCreateInput, UserUpdateInput } from '@o2n/shared';
 import { NotFoundError, ValidationError } from '@o2n/governance';
 import { withTransaction, type Db } from '../db.js';
 import { resolveRoleId, resolveWorkspaceId } from './role-workspace-resolver.js';
+import { assertSeatAvailable } from './seat-limit-service.js';
 
 interface UserRow {
   id: string;
@@ -113,6 +114,7 @@ export class UserService {
         [organizationId, input.email],
       );
       if (existing[0]) throw new ValidationError(`A user with email ${input.email} already exists in this organization`);
+      await assertSeatAvailable(client, organizationId);
 
       const roleId = await resolveRoleId(client, organizationId, input.role);
       const workspaceId = await resolveWorkspaceId(client, organizationId, input.workspaceId);

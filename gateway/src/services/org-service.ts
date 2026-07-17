@@ -103,6 +103,23 @@ export class OrgService {
   }
 
   /**
+   * RT-081 — written only by activation-scheduler.ts on every successful
+   * Control Plane check-in. Never exposed through the self-service update()
+   * path above — same "Control-Plane's job, not a Runtime setting" rule as
+   * plan/status.
+   */
+  async updateActivationInfo(
+    organizationId: string,
+    activationType: 'personal' | 'organizational',
+    maxUsers: number | null,
+  ): Promise<void> {
+    await this.db.query(
+      `UPDATE organizations SET activation_type = $1, max_users = $2, updated_at = NOW() WHERE id = $3`,
+      [activationType, maxUsers, organizationId],
+    );
+  }
+
+  /**
    * Read-only lookup for the auth providers that don't auto-bootstrap
    * (password/magic_link/oauth — only dev_api_key does, see
    * getOrCreateBootstrapped). Returns null on any missing piece so callers

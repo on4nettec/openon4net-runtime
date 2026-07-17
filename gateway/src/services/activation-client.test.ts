@@ -45,6 +45,8 @@ describe('activation-client', () => {
           status: 'active',
           policy: { allowedModels: ['gpt-4o-mini'], allowedProviders: ['openai'], governanceThresholds: { approvalThresholdCents: 2000 } },
           featureFlags: { skills: true },
+          activationType: 'organizational',
+          maxUsers: 3,
         }),
       );
     });
@@ -64,6 +66,8 @@ describe('activation-client', () => {
       status: 'active',
       policy: { allowedModels: ['gpt-4o-mini'], allowedProviders: ['openai'], governanceThresholds: { approvalThresholdCents: 2000 } },
       featureFlags: { skills: true },
+      activationType: 'organizational',
+      maxUsers: 3,
     });
   });
 
