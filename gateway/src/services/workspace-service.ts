@@ -82,6 +82,16 @@ export class WorkspaceService {
     return toWorkspace(row);
   }
 
+  async getById(organizationId: string, workspaceId: string): Promise<Workspace> {
+    const { rows } = await this.db.query<WorkspaceRow>(
+      `SELECT * FROM workspaces WHERE id = $1 AND organization_id = $2`,
+      [workspaceId, organizationId],
+    );
+    const row = rows[0];
+    if (!row) throw new NotFoundError('Workspace', workspaceId);
+    return toWorkspace(row);
+  }
+
   async isActive(organizationId: string, workspaceId: string): Promise<boolean> {
     const { rows } = await this.db.query<{ status: Workspace['status'] }>(
       `SELECT status FROM workspaces WHERE id = $1 AND organization_id = $2`,

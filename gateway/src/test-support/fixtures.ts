@@ -48,6 +48,13 @@ export async function createTestFixture(db: Db): Promise<TestFixture> {
 export async function cleanupTestFixture(db: Db, organizationId: string): Promise<void> {
   await db.query(`DELETE FROM audit_logs WHERE organization_id = $1`, [organizationId]);
   await db.query(`DELETE FROM approval_queue WHERE organization_id = $1`, [organizationId]);
+  // conversations.user_id has no ON DELETE CASCADE (migrations/0003_memory.sql)
+  // — must go before `DELETE FROM users` below, or that delete violates
+  // conversations_user_id_fkey whenever a test created a conversation.
+  await db.query(
+    `DELETE FROM conversations WHERE agent_id IN (SELECT id FROM agents WHERE organization_id = $1)`,
+    [organizationId],
+  ); // cascades messages
   await db.query(`DELETE FROM skill_proposals WHERE organization_id = $1`, [organizationId]);
   await db.query(`DELETE FROM skills WHERE organization_id = $1`, [organizationId]);
   // workflows.created_by_user_id / webhook_endpoints.created_by_user_id /

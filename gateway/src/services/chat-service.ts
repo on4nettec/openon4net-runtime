@@ -17,6 +17,8 @@ import { ApprovalService } from './approval-service.js';
 import { AuditService } from './audit-service.js';
 import { MemoryService, AUTO_SUMMARY_EVERY_N_MESSAGES } from './memory-service.js';
 import { UserService } from './user-service.js';
+import { ContextBuilder } from './context-builder.js';
+import { buildSystemPrompt } from './prompt-builder.js';
 import { WalletService } from './wallet-service.js';
 import { LlmService } from './llm-service.js';
 import type { ProviderConfigService } from './provider-config-service.js';
@@ -82,6 +84,7 @@ export class ChatService {
   private memoryService: MemoryService;
   private agentAccessService: AgentAccessService;
   private userService: UserService;
+  private contextBuilder: ContextBuilder;
 
   constructor(
     private db: Db,
@@ -95,6 +98,7 @@ export class ChatService {
     this.memoryService = new MemoryService(db, redis, env.SHORT_MEMORY_TTL_SECONDS, embeddingService);
     this.agentAccessService = new AgentAccessService(db);
     this.userService = new UserService(db);
+    this.contextBuilder = new ContextBuilder(db, this.memoryService);
   }
 
   /**
@@ -169,7 +173,18 @@ export class ChatService {
     await this.memoryService.appendMessage(conversation.id, { role: 'user', content: params.message });
 
     const history = await this.memoryService.getRecentMessages(conversation.id, 10);
-    const systemPrompt = `You are ${agent.name}, a ${agent.role} digital employee.`;
+    // RT-031 — context is assembled as a formal artifact (identity/task/
+    // workspace/memory/tools/permissions/language/trace, see
+    // context-builder.ts) then compressed into a single system message.
+    const context = await this.contextBuilder.build({
+      organizationId: params.organizationId,
+      userId: params.userId,
+      agent,
+      conversation,
+      message: params.message,
+      traceId: params.traceId,
+    });
+    const systemPrompt = buildSystemPrompt(context);
     const llmMessages: LlmMessage[] = [
       { role: 'system', content: systemPrompt },
       ...history
