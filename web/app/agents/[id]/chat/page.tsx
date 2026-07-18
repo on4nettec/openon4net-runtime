@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import type { Agent, Conversation } from '@o2n/shared';
+import { AGENT_ROLE_CATALOG } from '@o2n/shared';
 import { api, loadSession, streamChat, ApiError, type Session } from '@/lib/api-client';
 import { applyDocumentDirection, isRtlLanguage } from '@/lib/i18n';
 import { Sidebar } from '@/components/Sidebar';
@@ -47,16 +48,25 @@ export default function AgentChatPage() {
   const [effectiveLanguage, setEffectiveLanguage] = useState('en');
   const bottomRef = useRef<HTMLDivElement>(null);
 
-  // RT-025 — files attached to this agent's own workspace.
-  const [showFiles, setShowFiles] = useState(false);
+  // RT-025 — files attached to this agent's own workspace. RT-021 makes this
+  // panel a persistent part of the 3-panel layout, not a toggle.
   const [files, setFiles] = useState<AgentFile[]>([]);
   const [filesError, setFilesError] = useState<string | null>(null);
   const [uploadingFile, setUploadingFile] = useState(false);
 
   // RT-022 — session management: an agent can have many conversations.
-  const [showSessions, setShowSessions] = useState(false);
   const [sessions, setSessions] = useState<Conversation[]>([]);
   const [sessionsError, setSessionsError] = useState<string | null>(null);
+
+  // RT-021 — Control panel: switch agent + (admin) create a new one, per
+  // docs/spect/00_VISION/05-ux-ui-design.md §5.1's reference layout.
+  const [agents, setAgents] = useState<Agent[]>([]);
+  const [showCreateAgent, setShowCreateAgent] = useState(false);
+  const [newAgentName, setNewAgentName] = useState('');
+  const [newAgentRoleChoice, setNewAgentRoleChoice] = useState<string>(AGENT_ROLE_CATALOG[0]?.value ?? '__other__');
+  const [newAgentCustomRole, setNewAgentCustomRole] = useState('');
+  const [creatingAgent, setCreatingAgent] = useState(false);
+  const [createAgentError, setCreateAgentError] = useState<string | null>(null);
 
   function loadSessions() {
     api
@@ -116,6 +126,26 @@ export default function AgentChatPage() {
       }
     } catch (err) {
       setSessionsError(err instanceof ApiError ? err.message : 'Failed to archive session');
+    }
+  }
+
+  async function handleCreateAgent(e: FormEvent) {
+    e.preventDefault();
+    const role = newAgentRoleChoice === '__other__' ? newAgentCustomRole : newAgentRoleChoice;
+    setCreatingAgent(true);
+    setCreateAgentError(null);
+    try {
+      // RT-023 — a dedicated 1:1 workspace per agent, same as the /agents page.
+      const dedicatedWorkspace = await api.createWorkspace({ name: `${newAgentName} Workspace` });
+      const created = await api.createAgent({ name: newAgentName, role, workspaceId: dedicatedWorkspace.id });
+      setShowCreateAgent(false);
+      setNewAgentName('');
+      setNewAgentCustomRole('');
+      router.push(`/agents/${created.id}/chat`);
+    } catch (err) {
+      setCreateAgentError(err instanceof ApiError ? err.message : 'Failed to create agent');
+    } finally {
+      setCreatingAgent(false);
     }
   }
 
@@ -193,6 +223,12 @@ export default function AgentChatPage() {
       setNotice(err instanceof ApiError ? err.message : 'Failed to load conversation history'),
     );
     loadRateLimit();
+    loadSessions();
+    loadFiles();
+    api
+      .listAgents()
+      .then(setAgents)
+      .catch(() => {}); // Control panel's agent switcher — non-fatal if it fails to load
 
     // RT-083 — effective language is user.language ?? organization.language;
     // fetched fresh (not cached on session) since either can change without
@@ -304,72 +340,115 @@ export default function AgentChatPage() {
               {rateLimit.usedThisMinute}/{rateLimit.limitPerMinute} req/min
             </span>
           ) : null}
-          <button
-            className="secondary"
-            onClick={() => {
-              setShowSessions((v) => !v);
-              if (!showSessions) loadSessions();
-            }}
-          >
-            {showSessions ? 'Hide sessions' : 'Sessions'}
-          </button>
-          <button className="secondary" onClick={handleNewSession}>
-            + New session
-          </button>
-          <button
-            className="secondary"
-            onClick={() => {
-              setShowFiles((v) => !v);
-              if (!showFiles) loadFiles();
-            }}
-          >
-            {showFiles ? 'Hide files' : 'Files'}
-          </button>
         </nav>
       </div>
 
-      <div className="page" style={{ display: 'flex', gap: 16, height: 'calc(100vh - 120px)' }}>
-        {showSessions ? (
-          <div className="card" style={{ width: 240, flexShrink: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 10 }}>
-            <strong style={{ fontSize: 13 }}>Recent sessions</strong>
-            {sessionsError ? <div className="error">{sessionsError}</div> : null}
-            {sessions.length === 0 ? (
-              <p className="muted" style={{ fontSize: 12, margin: 0 }}>No sessions yet.</p>
-            ) : (
-              sessions.map((s) => (
-                <div
-                  key={s.id}
-                  style={{
-                    borderTop: '1px solid var(--color-border)',
-                    paddingTop: 8,
-                    fontSize: 12,
-                    background: s.id === conversationId ? 'var(--color-primary-subtle)' : undefined,
-                  }}
-                >
-                  <button
-                    className="secondary"
-                    style={{ width: '100%', textAlign: 'left', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
-                    title={s.title ?? s.id}
-                    onClick={() => handleSwitchSession(s.id)}
-                  >
-                    {s.title ?? `Session ${s.id.slice(0, 8)}`}
-                  </button>
-                  <div className="muted" style={{ fontSize: 11, marginTop: 2, marginBottom: 4 }}>
-                    {s.messageCount} messages
-                  </div>
-                  <div style={{ display: 'flex', gap: 6 }}>
-                    <button className="secondary" onClick={() => handleRenameSession(s.id, s.title)}>
-                      Rename
-                    </button>
-                    <button className="secondary" onClick={() => handleArchiveSession(s.id)}>
-                      Archive
-                    </button>
-                  </div>
-                </div>
-              ))
-            )}
+      {/* RT-021 — 3-panel layout (Control/Chat/Workspace), mirrored under RTL
+          so Control ends up on the reading-start side either way. */}
+      <div
+        className="page"
+        style={{
+          display: 'flex',
+          flexDirection: isRtlLanguage(effectiveLanguage) ? 'row-reverse' : 'row',
+          gap: 16,
+          height: 'calc(100vh - 120px)',
+        }}
+      >
+        <div className="card" style={{ width: 240, flexShrink: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+            <select
+              value={agentId}
+              onChange={(e) => router.push(`/agents/${e.target.value}/chat`)}
+              style={{ flex: 1 }}
+            >
+              {agents.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.name}
+                </option>
+              ))}
+            </select>
+            {session?.role === 'admin' ? (
+              <button
+                className="secondary"
+                title="New agent"
+                onClick={() => setShowCreateAgent((v) => !v)}
+              >
+                +
+              </button>
+            ) : null}
           </div>
-        ) : null}
+
+          {showCreateAgent ? (
+            <form onSubmit={handleCreateAgent} style={{ display: 'flex', flexDirection: 'column', gap: 8, borderBottom: '1px solid var(--color-border)', paddingBottom: 10 }}>
+              {createAgentError ? <div className="error">{createAgentError}</div> : null}
+              <input
+                placeholder="Agent name"
+                value={newAgentName}
+                onChange={(e) => setNewAgentName(e.target.value)}
+                required
+              />
+              <select value={newAgentRoleChoice} onChange={(e) => setNewAgentRoleChoice(e.target.value)}>
+                {AGENT_ROLE_CATALOG.map((r) => (
+                  <option key={r.value} value={r.value}>
+                    {r.label}
+                  </option>
+                ))}
+                <option value="__other__">Other…</option>
+              </select>
+              {newAgentRoleChoice === '__other__' ? (
+                <input
+                  placeholder="Custom role"
+                  value={newAgentCustomRole}
+                  onChange={(e) => setNewAgentCustomRole(e.target.value)}
+                  required
+                />
+              ) : null}
+              <button type="submit" disabled={creatingAgent}>
+                {creatingAgent ? 'Creating…' : 'Create agent'}
+              </button>
+            </form>
+          ) : null}
+
+          <button onClick={handleNewSession}>+ New session</button>
+
+          <strong style={{ fontSize: 13 }}>Recent sessions</strong>
+          {sessionsError ? <div className="error">{sessionsError}</div> : null}
+          {sessions.length === 0 ? (
+            <p className="muted" style={{ fontSize: 12, margin: 0 }}>No sessions yet.</p>
+          ) : (
+            sessions.map((s) => (
+              <div
+                key={s.id}
+                style={{
+                  borderTop: '1px solid var(--color-border)',
+                  paddingTop: 8,
+                  fontSize: 12,
+                  background: s.id === conversationId ? 'var(--color-primary-subtle)' : undefined,
+                }}
+              >
+                <button
+                  className="secondary"
+                  style={{ width: '100%', textAlign: 'left', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                  title={s.title ?? s.id}
+                  onClick={() => handleSwitchSession(s.id)}
+                >
+                  {s.title ?? `Session ${s.id.slice(0, 8)}`}
+                </button>
+                <div className="muted" style={{ fontSize: 11, marginTop: 2, marginBottom: 4 }}>
+                  {s.messageCount} messages
+                </div>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <button className="secondary" onClick={() => handleRenameSession(s.id, s.title)}>
+                    Rename
+                  </button>
+                  <button className="secondary" onClick={() => handleArchiveSession(s.id)}>
+                    Archive
+                  </button>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
 
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
           {notice ? <div className="error">{notice}</div> : null}
@@ -408,10 +487,14 @@ export default function AgentChatPage() {
           </form>
         </div>
 
-        {showFiles ? (
-          <div className="card" style={{ width: 280, flexShrink: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <div className="card" style={{ width: 280, flexShrink: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <strong style={{ fontSize: 13 }}>Workspace files</strong>
-            {filesError ? <div className="error">{filesError}</div> : null}
+            <button className="secondary" onClick={loadFiles} title="Refresh">
+              ↻
+            </button>
+          </div>
+          {filesError ? <div className="error">{filesError}</div> : null}
             {files.length === 0 ? (
               <p className="muted" style={{ fontSize: 12, margin: 0 }}>No files yet.</p>
             ) : (
@@ -423,7 +506,7 @@ export default function AgentChatPage() {
                   <div className="muted" style={{ fontSize: 11, marginBottom: 4 }}>{formatFileSize(f.sizeBytes)}</div>
                   <div style={{ display: 'flex', gap: 6 }}>
                     <button className="secondary" onClick={() => handleDownloadFile(f.id)}>
-                      Download
+                      Open
                     </button>
                     <button className="secondary" onClick={() => handleDeleteFile(f.id)}>
                       Delete
@@ -439,8 +522,7 @@ export default function AgentChatPage() {
               style={{ marginTop: 8 }}
             />
             {uploadingFile ? <span className="muted" style={{ fontSize: 12 }}>Uploading…</span> : null}
-          </div>
-        ) : null}
+        </div>
       </div>
     </div>
   );
