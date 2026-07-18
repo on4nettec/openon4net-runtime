@@ -104,6 +104,19 @@ jobs:
         working-directory: parent/apps/openon4net-runtime/gateway
         run: node scripts/migrate.mjs
 
+      # Diagnostic (temporary): a handful of gateway test files have
+      # deterministically failed with test-support/db.ts's hardcoded
+      # fallback credentials instead of the DATABASE_URL set above, across
+      # multiple attempted fixes (services block, step-level env restate,
+      # turbo.json task-level env allowlist). Running vitest directly here
+      # (bypassing turbo entirely) isolates whether turbo itself is
+      # filtering the env for its child processes — if this step ALSO
+      # reproduces the same 3-file failure, turbo isn't the cause and the
+      # turbo.json change won't have helped either.
+      - name: Debug — run gateway tests directly, bypassing turbo
+        working-directory: parent/apps/openon4net-runtime/gateway
+        run: node_modules/.bin/vitest run --passWithNoTests || true
+
       - name: Lint, typecheck, test
         working-directory: parent
         # DATABASE_URL/REDIS_URL are already set at job level above; restated
