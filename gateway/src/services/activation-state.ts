@@ -16,7 +16,10 @@ const GRACE_MS = 24 * 60 * 60 * 1000;
 export class ActivationState {
   private lastSuccessAt: number | null = null;
   private lastResult: CheckInResult | null = null;
-  private readonly configured: boolean;
+  // RT-092 — no longer readonly: a DB-configured activation key (set via
+  // POST /v1/activation/configure, after this process already started) can
+  // make an initially-unconfigured deployment configured without a restart.
+  private configured: boolean;
 
   constructor(env: Env) {
     this.configured = Boolean(env.CONTROL_PLANE_URL && env.ACTIVATION_KEY);
@@ -27,6 +30,15 @@ export class ActivationState {
     this.lastResult = result;
   }
 
+  /** RT-092 — called once activation-scheduler.ts confirms a key exists (env or DB), or right after a successful manual /v1/activation/configure. Idempotent. */
+  markConfigured(): void {
+    this.configured = true;
+  }
+
+  isConfigured(): boolean {
+    return this.configured;
+  }
+
   isActivated(): boolean {
     if (!this.configured) return true;
     if (this.lastSuccessAt === null) return false;
@@ -35,5 +47,10 @@ export class ActivationState {
 
   get lastCheckIn(): CheckInResult | null {
     return this.lastResult;
+  }
+
+  /** RT-093 — the short-lived proxy token from the most recent successful check-in, if any (null before the first successful check-in, or when unconfigured). */
+  get securityToken(): string | null {
+    return this.lastResult?.securityToken ?? null;
   }
 }

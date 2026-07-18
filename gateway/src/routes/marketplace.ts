@@ -13,6 +13,13 @@ import { SkillService } from '../services/skill-service.js';
 import { AuditService } from '../services/audit-service.js';
 import { WalletService } from '../services/wallet-service.js';
 
+// RT-093 — MARKETPLACE_SERVICE_URL stays required either way: it's just a
+// public discovery URL (not a secret), used directly for the read-only
+// browse endpoints (listPlugins/getPlugin/...) regardless of whether the
+// *authenticated* calls below end up going straight to Marketplace with
+// MARKETPLACE_API_KEY or through CP-034's proxy with a security token
+// instead — CP-034 eliminates the need to hold that API key locally, not
+// the need to know where Marketplace lives.
 function assertMarketplaceConfigured(ctx: AppContext): void {
   if (!ctx.env.MARKETPLACE_SERVICE_URL) {
     throw new O2NError('VALIDATION_ERROR', 'Marketplace integration is not configured (MARKETPLACE_SERVICE_URL unset)', 501);
@@ -64,10 +71,13 @@ export function registerMarketplaceRoutes(app: FastifyInstance, ctx: AppContext)
 
       let result: Record<string, unknown>;
       try {
-        result = await marketplaceClient.installPlugin(ctx.env, request.params.id, request.auth.organizationId, {
-          version: body.version,
-          acknowledgePermissionDiff: body.acknowledgePermissionDiff,
-        });
+        result = await marketplaceClient.installPlugin(
+          ctx.env,
+          request.params.id,
+          request.auth.organizationId,
+          { version: body.version, acknowledgePermissionDiff: body.acknowledgePermissionDiff },
+          ctx.activationState.securityToken,
+        );
       } catch (err) {
         // Re-thrown with the same code/details, just via Runtime's own
         // O2NError envelope so the UI handles it identically to any other
@@ -104,7 +114,12 @@ export function registerMarketplaceRoutes(app: FastifyInstance, ctx: AppContext)
       );
     }
 
-    const installed = await marketplaceClient.installSkill(ctx.env, request.params.id, request.auth.organizationId);
+    const installed = await marketplaceClient.installSkill(
+      ctx.env,
+      request.params.id,
+      request.auth.organizationId,
+      ctx.activationState.securityToken,
+    );
 
     // Copy the definition into a local, ownerless skills row (no agentId —
     // see SkillCreateSchema) so it shows up immediately; granting it to a
@@ -138,6 +153,7 @@ export function registerMarketplaceRoutes(app: FastifyInstance, ctx: AppContext)
       request.params.installId,
       request.auth.organizationId,
       body.config as Record<string, unknown>,
+      ctx.activationState.securityToken,
     );
     await new AuditService(ctx.db).logAction({
       organizationId: request.auth.organizationId,
@@ -158,7 +174,14 @@ export function registerMarketplaceRoutes(app: FastifyInstance, ctx: AppContext)
       const body = (request.body ?? {}) as { rating?: number; review?: string };
       if (typeof body.rating !== 'number') throw new ValidationError('rating is required');
 
-      const result = await marketplaceClient.ratePlugin(ctx.env, request.params.id, request.auth.organizationId, body.rating, body.review);
+      const result = await marketplaceClient.ratePlugin(
+        ctx.env,
+        request.params.id,
+        request.auth.organizationId,
+        body.rating,
+        body.review,
+        ctx.activationState.securityToken,
+      );
       await new AuditService(ctx.db).logAction({
         organizationId: request.auth.organizationId,
         userId: request.auth.userId,
@@ -177,7 +200,14 @@ export function registerMarketplaceRoutes(app: FastifyInstance, ctx: AppContext)
       const body = (request.body ?? {}) as { rating?: number; review?: string };
       if (typeof body.rating !== 'number') throw new ValidationError('rating is required');
 
-      const result = await marketplaceClient.rateSkill(ctx.env, request.params.id, request.auth.organizationId, body.rating, body.review);
+      const result = await marketplaceClient.rateSkill(
+        ctx.env,
+        request.params.id,
+        request.auth.organizationId,
+        body.rating,
+        body.review,
+        ctx.activationState.securityToken,
+      );
       await new AuditService(ctx.db).logAction({
         organizationId: request.auth.organizationId,
         userId: request.auth.userId,
@@ -198,7 +228,7 @@ export function registerMarketplaceRoutes(app: FastifyInstance, ctx: AppContext)
     assertMarketplaceConfigured(ctx);
     const publisherSlug = request.query.publisherSlug?.trim();
     if (!publisherSlug) throw new ValidationError('publisherSlug query parameter is required');
-    return marketplaceClient.listPublisherPlugins(ctx.env, publisherSlug);
+    return marketplaceClient.listPublisherPlugins(ctx.env, publisherSlug, ctx.activationState.securityToken);
   });
 
   app.post<{ Body: SubmitPluginInput }>('/v1/marketplace/publisher/plugins', async (request) => {
@@ -209,7 +239,11 @@ export function registerMarketplaceRoutes(app: FastifyInstance, ctx: AppContext)
       throw new ValidationError('publisherSlug, publisherDisplayName, packageName, name, version, and manifest are required');
     }
 
-    const result = await marketplaceClient.submitPlugin(ctx.env, body as SubmitPluginInput);
+    const result = await marketplaceClient.submitPlugin(
+      ctx.env,
+      body as SubmitPluginInput,
+      ctx.activationState.securityToken,
+    );
     await new AuditService(ctx.db).logAction({
       organizationId: request.auth.organizationId,
       userId: request.auth.userId,
@@ -224,7 +258,7 @@ export function registerMarketplaceRoutes(app: FastifyInstance, ctx: AppContext)
     assertMarketplaceConfigured(ctx);
     const publisherSlug = request.query.publisherSlug?.trim();
     if (!publisherSlug) throw new ValidationError('publisherSlug query parameter is required');
-    return marketplaceClient.listPublisherSkills(ctx.env, publisherSlug);
+    return marketplaceClient.listPublisherSkills(ctx.env, publisherSlug, ctx.activationState.securityToken);
   });
 
   app.post<{ Body: SubmitSkillInput }>('/v1/marketplace/publisher/skills', async (request) => {
@@ -235,7 +269,11 @@ export function registerMarketplaceRoutes(app: FastifyInstance, ctx: AppContext)
       throw new ValidationError('publisherSlug, publisherDisplayName, skillSlug, name, and definition are required');
     }
 
-    const result = await marketplaceClient.submitSkill(ctx.env, body as SubmitSkillInput);
+    const result = await marketplaceClient.submitSkill(
+      ctx.env,
+      body as SubmitSkillInput,
+      ctx.activationState.securityToken,
+    );
     await new AuditService(ctx.db).logAction({
       organizationId: request.auth.organizationId,
       userId: request.auth.userId,

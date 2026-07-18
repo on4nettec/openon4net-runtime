@@ -820,6 +820,20 @@ export const api = {
   getLocale: (lang: string) =>
     request<{ language: string; strings: Record<string, string>; source: string }>(`/v1/locales/${lang}`),
 
+  // RT-092 — first-run activation, DB-backed instead of only ACTIVATION_KEY env var.
+  getActivationStatus: () =>
+    request<{
+      configured: boolean;
+      isActivated: boolean;
+      lastCheckIn: { organizationName: string; plan: string; status: string } | null;
+    }>('/v1/activation/status'),
+
+  configureActivation: (activationCode: string) =>
+    request<{ organizationName: string; plan: string; status: string }>('/v1/activation/configure', {
+      method: 'POST',
+      body: JSON.stringify({ activationCode }),
+    }),
+
   getSsoConfig: () =>
     request<{ protocol: 'oidc' | 'saml'; config: Record<string, string>; hasSecret: boolean; isEnabled: boolean } | null>(
       '/v1/organization/sso',

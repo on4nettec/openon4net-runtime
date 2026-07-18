@@ -174,4 +174,72 @@ describe('marketplace-client', () => {
     expect(JSON.parse(receivedBody ?? '{}')).toEqual({ organizationId: 'org-1', config: { apiKey: 'secret' } });
     expect(result).toEqual({ installId: 'i1', config: { apiKey: 'secret' } });
   });
+
+  describe('RT-093 — CP-034 proxy routing', () => {
+    it('installPlugin() routes through CONTROL_PLANE_URL/v1/proxy with the security token as Bearer, when both are available', async () => {
+      let receivedAuth: string | undefined;
+      let receivedPath: string | undefined;
+      server = createServer(async (req, res) => {
+        receivedAuth = req.headers.authorization;
+        receivedPath = req.url;
+        await readBody(req);
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({ installId: 'i1' }));
+      });
+      const port = await listen(server);
+
+      // MARKETPLACE_SERVICE_URL is deliberately a dead address — proving the
+      // proxy path is genuinely used instead, not silently falling back.
+      const env = createTestEnv({
+        MARKETPLACE_SERVICE_URL: 'http://127.0.0.1:1',
+        MARKETPLACE_API_KEY: 'should-not-be-used',
+        CONTROL_PLANE_URL: `http://127.0.0.1:${port}`,
+      });
+
+      const result = await marketplaceClient.installPlugin(env, 'p1', 'org-1', {}, 'fake-security-token');
+
+      expect(receivedAuth).toBe('Bearer fake-security-token');
+      expect(receivedPath).toBe('/v1/proxy/marketplace/plugins/p1/install');
+      expect(result).toEqual({ installId: 'i1' });
+    });
+
+    it('installPlugin() falls back to the direct MARKETPLACE_API_KEY path when no security token is passed', async () => {
+      let receivedAuth: string | undefined;
+      server = createServer(async (req, res) => {
+        receivedAuth = req.headers.authorization;
+        await readBody(req);
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({ installId: 'i1' }));
+      });
+      const port = await listen(server);
+
+      const env = createTestEnv({
+        MARKETPLACE_SERVICE_URL: `http://127.0.0.1:${port}`,
+        MARKETPLACE_API_KEY: 'direct-marketplace-key',
+        CONTROL_PLANE_URL: 'http://127.0.0.1:1', // configured, but no token passed -> must not be used
+      });
+
+      await marketplaceClient.installPlugin(env, 'p1', 'org-1');
+
+      expect(receivedAuth).toBe('Bearer direct-marketplace-key');
+    });
+
+    it('listPlugins() (read-only discovery) always goes direct to Marketplace, even when a security token exists elsewhere', async () => {
+      let hitCount = 0;
+      server = createServer((req, res) => {
+        hitCount += 1;
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({ plugins: [], total: 0 }));
+      });
+      const port = await listen(server);
+
+      const env = createTestEnv({
+        MARKETPLACE_SERVICE_URL: `http://127.0.0.1:${port}`,
+        CONTROL_PLANE_URL: 'http://127.0.0.1:1', // would fail hard if this were ever used
+      });
+
+      await marketplaceClient.listPlugins(env);
+      expect(hitCount).toBe(1);
+    });
+  });
 });

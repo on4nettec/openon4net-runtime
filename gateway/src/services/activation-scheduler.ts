@@ -1,5 +1,6 @@
 import type { AppContext } from '../context.js';
 import { checkIn } from './activation-client.js';
+import { ActivationConfigService } from './activation-config-service.js';
 import { OrgService } from './org-service.js';
 
 const CHECK_INTERVAL_MS = 60 * 60_000; // hourly
@@ -19,10 +20,18 @@ const CHECK_INTERVAL_MS = 60 * 60_000; // hourly
  */
 export function startActivationScheduler(ctx: AppContext): () => void {
   const orgService = new OrgService(ctx.db);
+  const activationConfigService = new ActivationConfigService(ctx.db, ctx.env);
   const tick = (): void => {
-    checkIn(ctx.env)
+    // RT-092 — a key entered via POST /v1/activation/configure (stored in
+    // activation_config) takes priority over env.ACTIVATION_KEY, same
+    // DB-overrides-env convention as provider-config-service.ts.
+    activationConfigService
+      .getActivationKey()
+      .catch(() => null)
+      .then((dbKey) => checkIn(ctx.env, dbKey ?? undefined))
       .then(async (result) => {
         if (!result) return;
+        ctx.activationState.markConfigured();
         ctx.activationState.recordSuccess(result);
         await orgService.updateActivationInfo(result.organizationId, result.activationType, result.maxUsers);
       })

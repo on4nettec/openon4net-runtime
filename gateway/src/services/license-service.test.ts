@@ -15,6 +15,7 @@ function fakeCheckIn(featureFlags: Record<string, boolean>): CheckInResult {
     activationType: 'organizational',
     maxUsers: null,
     aiGatewayEnabled: false,
+    securityToken: 'fake-security-token',
   };
 }
 

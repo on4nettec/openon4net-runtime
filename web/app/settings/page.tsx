@@ -88,6 +88,16 @@ export default function SettingsPage() {
   const [availableModels, setAvailableModels] = useState<string[]>([]);
   const [modelsLoading, setModelsLoading] = useState(false);
 
+  // RT-092 — first-run activation, DB-backed instead of only ACTIVATION_KEY env var.
+  const [activationStatus, setActivationStatus] = useState<{
+    configured: boolean;
+    isActivated: boolean;
+    lastCheckIn: { organizationName: string; plan: string; status: string } | null;
+  } | null>(null);
+  const [activationCode, setActivationCode] = useState('');
+  const [configuringActivation, setConfiguringActivation] = useState(false);
+  const [activationError, setActivationError] = useState<string | null>(null);
+
   useEffect(() => {
     if (!editing) return;
     setModelsLoading(true);
@@ -130,6 +140,28 @@ export default function SettingsPage() {
       .catch((err) => setWalletError(err instanceof ApiError ? err.message : 'Failed to load wallet'));
   }
 
+  function loadActivationStatus() {
+    return api
+      .getActivationStatus()
+      .then(setActivationStatus)
+      .catch(() => {}); // non-fatal — the section just shows nothing extra if this fails
+  }
+
+  async function handleConfigureActivation(e: FormEvent) {
+    e.preventDefault();
+    setConfiguringActivation(true);
+    setActivationError(null);
+    try {
+      await api.configureActivation(activationCode.trim());
+      setActivationCode('');
+      await loadActivationStatus();
+    } catch (err) {
+      setActivationError(err instanceof ApiError ? err.message : 'Failed to configure activation');
+    } finally {
+      setConfiguringActivation(false);
+    }
+  }
+
   function loadSso() {
     return api
       .getSsoConfig()
@@ -165,6 +197,7 @@ export default function SettingsPage() {
       loadOrganization();
       loadWallet();
       loadSso();
+      loadActivationStatus();
     }
   }, [router]);
 
@@ -355,6 +388,39 @@ export default function SettingsPage() {
             ) : !orgError ? (
               <p>Loading…</p>
             ) : null}
+
+            <h2 style={{ fontSize: 16, marginTop: 24 }}>Activation</h2>
+            <p style={{ color: 'var(--color-muted-foreground)', fontSize: 13, marginTop: 0 }}>
+              Connects this deployment to Control Plane for plan/policy sync and Marketplace access — entirely
+              optional, self-host works fully without it.
+            </p>
+            <div className="card" style={{ marginBottom: 24, display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {activationError ? <div className="error">{activationError}</div> : null}
+              {activationStatus?.configured ? (
+                <>
+                  <Row label="Organization" value={activationStatus.lastCheckIn?.organizationName ?? '—'} />
+                  <Row label="Plan" value={activationStatus.lastCheckIn?.plan ?? '—'} />
+                  <Row label="Status" value={activationStatus.isActivated ? 'Active' : 'Grace period expired'} />
+                </>
+              ) : (
+                <p className="muted" style={{ fontSize: 13, margin: 0 }}>Not configured yet.</p>
+              )}
+              <form
+                onSubmit={handleConfigureActivation}
+                style={{ borderTop: '1px solid var(--color-border)', paddingTop: 14, marginTop: 4, display: 'flex', gap: 8 }}
+              >
+                <input
+                  value={activationCode}
+                  onChange={(e) => setActivationCode(e.target.value)}
+                  placeholder="Paste activation code…"
+                  style={{ flex: 1 }}
+                  required
+                />
+                <button type="submit" disabled={configuringActivation || !activationCode.trim()}>
+                  {configuringActivation ? 'Verifying…' : activationStatus?.configured ? 'Replace' : 'Activate'}
+                </button>
+              </form>
+            </div>
 
             <h2 style={{ fontSize: 16, marginTop: 24 }}>Branding</h2>
             <p style={{ color: 'var(--color-muted-foreground)', fontSize: 13, marginTop: 0 }}>

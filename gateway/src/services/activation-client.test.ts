@@ -47,6 +47,8 @@ describe('activation-client', () => {
           featureFlags: { skills: true },
           activationType: 'organizational',
           maxUsers: 3,
+          aiGatewayEnabled: false,
+          securityToken: 'fake-security-token',
         }),
       );
     });
@@ -68,7 +70,40 @@ describe('activation-client', () => {
       featureFlags: { skills: true },
       activationType: 'organizational',
       maxUsers: 3,
+      aiGatewayEnabled: false,
+      securityToken: 'fake-security-token',
     });
+  });
+
+  it('RT-092 — activationKeyOverride wins over env.ACTIVATION_KEY', async () => {
+    let receivedAuth: string | undefined;
+    server = createServer((req, res) => {
+      receivedAuth = req.headers.authorization;
+      res.setHeader('Content-Type', 'application/json');
+      res.end(
+        JSON.stringify({
+          organizationId: 'org-1',
+          organizationName: 'Acme',
+          plan: 'pro',
+          status: 'active',
+          policy: { allowedModels: [], allowedProviders: [], governanceThresholds: { approvalThresholdCents: 2000 } },
+          featureFlags: {},
+          activationType: 'organizational',
+          maxUsers: null,
+          aiGatewayEnabled: false,
+          securityToken: 'fake-security-token',
+        }),
+      );
+    });
+    const port = await listen(server);
+
+    const env = createTestEnv({
+      CONTROL_PLANE_URL: `http://127.0.0.1:${port}`,
+      ACTIVATION_KEY: 'env-configured-key',
+    });
+
+    await checkIn(env, 'freshly-typed-override-key');
+    expect(receivedAuth).toBe('Bearer freshly-typed-override-key');
   });
 
   it('returns null (never throws) on a non-2xx response', async () => {

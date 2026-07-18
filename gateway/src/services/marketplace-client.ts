@@ -120,15 +120,39 @@ export class MarketplaceRequestError extends Error {
   }
 }
 
-async function marketplaceRequest<T>(env: Env, path: string, init?: RequestInit): Promise<T> {
-  if (!env.MARKETPLACE_SERVICE_URL) {
+/**
+ * RT-093 — when a caller passes a `securityToken` (only the authenticated
+ * endpoints below ever do — CP-032's short-lived per-org token) AND
+ * CONTROL_PLANE_URL is configured, the request goes through Platform's
+ * CP-034 proxy instead of straight to Marketplace with the static
+ * MARKETPLACE_API_KEY. `path` already starts with `/marketplace/...` for
+ * every caller, and Platform's proxy route is registered at
+ * `/v1/proxy/marketplace/*`, so switching just the base URL (not
+ * transforming `path` itself) lands on the right upstream route either way.
+ * Falls back to the original direct-to-Marketplace behavior when no token
+ * is available — pure self-host orgs with no activation relationship keep
+ * working exactly as before.
+ */
+async function marketplaceRequest<T>(
+  env: Env,
+  path: string,
+  init?: RequestInit,
+  securityToken?: string | null,
+): Promise<T> {
+  const useProxy = Boolean(securityToken && env.CONTROL_PLANE_URL);
+  const baseUrl = useProxy ? `${env.CONTROL_PLANE_URL}/v1/proxy` : env.MARKETPLACE_SERVICE_URL;
+  if (!baseUrl) {
     throw new Error('MARKETPLACE_SERVICE_URL is not configured');
   }
   const headers = new Headers(init?.headers);
-  if (env.MARKETPLACE_API_KEY) headers.set('Authorization', `Bearer ${env.MARKETPLACE_API_KEY}`);
+  if (useProxy) {
+    headers.set('Authorization', `Bearer ${securityToken}`);
+  } else if (env.MARKETPLACE_API_KEY) {
+    headers.set('Authorization', `Bearer ${env.MARKETPLACE_API_KEY}`);
+  }
   if (init?.body !== undefined) headers.set('Content-Type', 'application/json');
 
-  const response = await fetch(`${env.MARKETPLACE_SERVICE_URL}${path}`, {
+  const response = await fetch(`${baseUrl}${path}`, {
     ...init,
     headers,
     signal: AbortSignal.timeout(10_000),
@@ -179,63 +203,113 @@ export const marketplaceClient = {
     }
   },
 
-  installPlugin: (env: Env, pluginId: string, organizationId: string, opts: InstallPluginOptions = {}) =>
-    marketplaceRequest<Record<string, unknown>>(env, `/marketplace/plugins/${pluginId}/install`, {
-      method: 'POST',
-      body: JSON.stringify({
-        organizationId,
-        version: opts.version,
-        acknowledgePermissionDiff: opts.acknowledgePermissionDiff,
-      }),
-    }),
+  // RT-093 — the remaining methods below all require Marketplace auth
+  // (install/rate/publish), so each takes an optional securityToken: when
+  // the caller (routes/marketplace.ts) has one from a recent activation
+  // check-in, the call is mediated through Platform's CP-034 proxy instead
+  // of using the static MARKETPLACE_API_KEY directly.
+  installPlugin: (
+    env: Env,
+    pluginId: string,
+    organizationId: string,
+    opts: InstallPluginOptions = {},
+    securityToken?: string | null,
+  ) =>
+    marketplaceRequest<Record<string, unknown>>(
+      env,
+      `/marketplace/plugins/${pluginId}/install`,
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          organizationId,
+          version: opts.version,
+          acknowledgePermissionDiff: opts.acknowledgePermissionDiff,
+        }),
+      },
+      securityToken,
+    ),
 
-  installSkill: (env: Env, skillId: string, organizationId: string) =>
-    marketplaceRequest<InstallSkillResult>(env, `/marketplace/skills/${skillId}/install`, {
-      method: 'POST',
-      body: JSON.stringify({ organizationId }),
-    }),
+  installSkill: (env: Env, skillId: string, organizationId: string, securityToken?: string | null) =>
+    marketplaceRequest<InstallSkillResult>(
+      env,
+      `/marketplace/skills/${skillId}/install`,
+      { method: 'POST', body: JSON.stringify({ organizationId }) },
+      securityToken,
+    ),
 
-  updatePluginInstallConfig: (env: Env, installId: string, organizationId: string, config: Record<string, unknown>) =>
-    marketplaceRequest<{ installId: string; config: Record<string, unknown> }>(env, `/marketplace/installs/${installId}/config`, {
-      method: 'PATCH',
-      body: JSON.stringify({ organizationId, config }),
-    }),
+  updatePluginInstallConfig: (
+    env: Env,
+    installId: string,
+    organizationId: string,
+    config: Record<string, unknown>,
+    securityToken?: string | null,
+  ) =>
+    marketplaceRequest<{ installId: string; config: Record<string, unknown> }>(
+      env,
+      `/marketplace/installs/${installId}/config`,
+      { method: 'PATCH', body: JSON.stringify({ organizationId, config }) },
+      securityToken,
+    ),
 
-  ratePlugin: (env: Env, pluginId: string, organizationId: string, rating: number, review?: string) =>
+  ratePlugin: (
+    env: Env,
+    pluginId: string,
+    organizationId: string,
+    rating: number,
+    review?: string,
+    securityToken?: string | null,
+  ) =>
     marketplaceRequest<{ pluginId: string; organizationId: string; rating: number; review: string | null }>(
       env,
       `/marketplace/plugins/${pluginId}/rate`,
       { method: 'POST', body: JSON.stringify({ organizationId, rating, review }) },
+      securityToken,
     ),
 
-  rateSkill: (env: Env, skillId: string, organizationId: string, rating: number, review?: string) =>
+  rateSkill: (
+    env: Env,
+    skillId: string,
+    organizationId: string,
+    rating: number,
+    review?: string,
+    securityToken?: string | null,
+  ) =>
     marketplaceRequest<{ skillId: string; organizationId: string; rating: number; review: string | null }>(
       env,
       `/marketplace/skills/${skillId}/rate`,
       { method: 'POST', body: JSON.stringify({ organizationId, rating, review }) },
+      securityToken,
     ),
 
-  submitPlugin: (env: Env, input: SubmitPluginInput) =>
-    marketplaceRequest<{ pluginId: string; versionId: string }>(env, '/publisher/plugins', {
-      method: 'POST',
-      body: JSON.stringify(input),
-    }),
+  submitPlugin: (env: Env, input: SubmitPluginInput, securityToken?: string | null) =>
+    marketplaceRequest<{ pluginId: string; versionId: string }>(
+      env,
+      '/publisher/plugins',
+      { method: 'POST', body: JSON.stringify(input) },
+      securityToken,
+    ),
 
-  listPublisherPlugins: (env: Env, publisherSlug: string) =>
+  listPublisherPlugins: (env: Env, publisherSlug: string, securityToken?: string | null) =>
     marketplaceRequest<{ plugins: PublisherPluginSummary[]; total: number }>(
       env,
       `/publisher/plugins?publisherSlug=${encodeURIComponent(publisherSlug)}`,
+      undefined,
+      securityToken,
     ),
 
-  submitSkill: (env: Env, input: SubmitSkillInput) =>
-    marketplaceRequest<{ skillId: string }>(env, '/publisher/skills', {
-      method: 'POST',
-      body: JSON.stringify(input),
-    }),
+  submitSkill: (env: Env, input: SubmitSkillInput, securityToken?: string | null) =>
+    marketplaceRequest<{ skillId: string }>(
+      env,
+      '/publisher/skills',
+      { method: 'POST', body: JSON.stringify(input) },
+      securityToken,
+    ),
 
-  listPublisherSkills: (env: Env, publisherSlug: string) =>
+  listPublisherSkills: (env: Env, publisherSlug: string, securityToken?: string | null) =>
     marketplaceRequest<{ skills: PublisherSkillSummary[]; total: number }>(
       env,
       `/publisher/skills?publisherSlug=${encodeURIComponent(publisherSlug)}`,
+      undefined,
+      securityToken,
     ),
 };
