@@ -6,7 +6,7 @@ import Link from 'next/link';
 import type { Agent, Conversation } from '@o2n/shared';
 import { AGENT_ROLE_CATALOG } from '@o2n/shared';
 import { api, loadSession, streamChat, ApiError, type Session } from '@/lib/api-client';
-import { applyDocumentDirection, isRtlLanguage } from '@/lib/i18n';
+import { applyDocumentDirection, isRtlLanguage, useLocaleStrings } from '@/lib/i18n';
 import { Sidebar } from '@/components/Sidebar';
 
 interface DisplayMessage {
@@ -46,6 +46,7 @@ export default function AgentChatPage() {
   // document.documentElement so flex layout (message alignSelf, input row)
   // physically mirrors, not just the text direction within a bubble.
   const [effectiveLanguage, setEffectiveLanguage] = useState('en');
+  const t = useLocaleStrings(effectiveLanguage);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   // RT-025 — files attached to this agent's own workspace. RT-021 makes this
@@ -326,7 +327,11 @@ export default function AgentChatPage() {
       {session ? <Sidebar session={session} /> : null}
 
       <div className="topbar">
-        <Link href="/agents">{isRtlLanguage(effectiveLanguage) ? 'Agents →' : '← Agents'}</Link>
+        <Link href="/agents">
+          {isRtlLanguage(effectiveLanguage)
+            ? `${t('chat.backToAgents', 'Agents')} →`
+            : `← ${t('chat.backToAgents', 'Agents')}`}
+        </Link>
         <nav>
           <strong>{agent?.name ?? 'Loading…'}</strong>
           {rateLimit ? (
@@ -477,12 +482,12 @@ export default function AgentChatPage() {
             <input
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder="Type a message…"
+              placeholder={t('chat.inputPlaceholder', 'Type a message…')}
               style={{ flex: 1 }}
               disabled={sending}
             />
             <button type="submit" disabled={sending || !input.trim()}>
-              Send
+              {t('chat.send', 'Send')}
             </button>
           </form>
         </div>
