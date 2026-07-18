@@ -450,7 +450,7 @@ export default function AgentChatPage() {
           {rateLimit ? (
             <span
               style={{
-                fontSize: 12,
+                fontSize: 'var(--font-size-xs)',
                 color: rateLimit.usedThisMinute >= rateLimit.limitPerMinute ? 'var(--color-error)' : 'var(--color-muted-foreground)',
               }}
               title="Requests this minute"
@@ -468,12 +468,12 @@ export default function AgentChatPage() {
         style={{
           display: 'flex',
           flexDirection: isRtlLanguage(effectiveLanguage) ? 'row-reverse' : 'row',
-          gap: 16,
+          gap: 'var(--space-4)',
           height: 'calc(100vh - 120px)',
         }}
       >
-        <div className="card" style={{ width: 240, flexShrink: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 10 }}>
-          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+        <div className="card" style={{ width: 240, flexShrink: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 'var(--space-2-5)' }}>
+          <div style={{ display: 'flex', gap: 'var(--space-1-5)', alignItems: 'center' }}>
             <select
               value={agentId}
               onChange={(e) => router.push(`/agents/${e.target.value}/chat`)}
@@ -497,7 +497,7 @@ export default function AgentChatPage() {
           </div>
 
           {showCreateAgent ? (
-            <form onSubmit={handleCreateAgent} style={{ display: 'flex', flexDirection: 'column', gap: 8, borderBottom: '1px solid var(--color-border)', paddingBottom: 10 }}>
+            <form onSubmit={handleCreateAgent} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', borderBottom: '1px solid var(--color-border)', paddingBottom: 'var(--space-2-5)' }}>
               {createAgentError ? <div className="error">{createAgentError}</div> : null}
               <input
                 placeholder="Agent name"
@@ -529,18 +529,18 @@ export default function AgentChatPage() {
 
           <button onClick={handleNewSession}>+ New session</button>
 
-          <strong style={{ fontSize: 13 }}>Recent sessions</strong>
+          <strong style={{ fontSize: 'var(--font-size-sm)' }}>Recent sessions</strong>
           {sessionsError ? <div className="error">{sessionsError}</div> : null}
           {sessions.length === 0 ? (
-            <p className="muted" style={{ fontSize: 12, margin: 0 }}>No sessions yet.</p>
+            <p className="muted" style={{ fontSize: 'var(--font-size-xs)', margin: 0 }}>No sessions yet.</p>
           ) : (
             sessions.map((s) => (
               <div
                 key={s.id}
                 style={{
                   borderTop: '1px solid var(--color-border)',
-                  paddingTop: 8,
-                  fontSize: 12,
+                  paddingTop: 'var(--space-2)',
+                  fontSize: 'var(--font-size-xs)',
                   background: s.id === conversationId ? 'var(--color-primary-subtle)' : undefined,
                 }}
               >
@@ -552,10 +552,10 @@ export default function AgentChatPage() {
                 >
                   {s.title ?? `Session ${s.id.slice(0, 8)}`}
                 </button>
-                <div className="muted" style={{ fontSize: 11, marginTop: 2, marginBottom: 4 }}>
+                <div className="muted" style={{ fontSize: 'var(--font-size-2xs)', marginTop: 2, marginBottom: 'var(--space-1)' }}>
                   {s.messageCount} messages
                 </div>
-                <div style={{ display: 'flex', gap: 6 }}>
+                <div style={{ display: 'flex', gap: 'var(--space-1-5)' }}>
                   <button className="secondary" onClick={() => handleRenameSession(s.id, s.title)}>
                     Rename
                   </button>
@@ -571,7 +571,7 @@ export default function AgentChatPage() {
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
           {notice ? <div className="error">{notice}</div> : null}
 
-          <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 'var(--space-2-5)' }}>
             {messages.length === 0 ? (
               <p style={{ color: 'var(--color-muted-foreground)' }}>Say hello to {agent?.name ?? 'your agent'} to start the conversation.</p>
             ) : null}
@@ -584,8 +584,8 @@ export default function AgentChatPage() {
                   <div
                     className="card"
                     style={{
-                      marginBottom: 6,
-                      fontSize: 12,
+                      marginBottom: 'var(--space-1-5)',
+                      fontSize: 'var(--font-size-xs)',
                       fontStyle: 'italic',
                       color: 'var(--color-muted-foreground)',
                       background: 'transparent',
@@ -594,7 +594,7 @@ export default function AgentChatPage() {
                   >
                     <button
                       className="secondary"
-                      style={{ fontSize: 11, marginBottom: expandedReasoning.has(i) ? 6 : 0 }}
+                      style={{ fontSize: 'var(--font-size-2xs)', marginBottom: expandedReasoning.has(i) ? 6 : 0 }}
                       onClick={() => toggleReasoning(i)}
                     >
                       {expandedReasoning.has(i) ? '🧠 Hide reasoning' : '🧠 Show reasoning'}
@@ -609,15 +609,15 @@ export default function AgentChatPage() {
                   <div
                     className="card"
                     style={{
-                      marginBottom: 6,
-                      fontSize: 12,
+                      marginBottom: 'var(--space-1-5)',
+                      fontSize: 'var(--font-size-xs)',
                       background: 'transparent',
                       border: '1px dashed var(--color-border)',
                     }}
                   >
                     <button
                       className="secondary"
-                      style={{ fontSize: 11, marginBottom: expandedTools.has(i) ? 6 : 0 }}
+                      style={{ fontSize: 'var(--font-size-2xs)', marginBottom: expandedTools.has(i) ? 6 : 0 }}
                       onClick={() => toggleTools(i)}
                     >
                       {expandedTools.has(i)
@@ -625,7 +625,7 @@ export default function AgentChatPage() {
                         : `🔧 Show tool calls (${m.toolCalls.length})`}
                     </button>
                     {expandedTools.has(i) ? (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1-5)' }}>
                         {m.toolCalls.map((call, callIndex) => (
                           <div key={callIndex}>
                             <div style={{ fontWeight: 600 }}>
@@ -662,7 +662,7 @@ export default function AgentChatPage() {
             <div ref={bottomRef} />
           </div>
 
-          <form onSubmit={handleSend} style={{ display: 'flex', gap: 8, marginTop: 14 }}>
+          <form onSubmit={handleSend} style={{ display: 'flex', gap: 'var(--space-2)', marginTop: 'var(--space-3-5)' }}>
             <input
               value={input}
               onChange={(e) => setInput(e.target.value)}
@@ -676,24 +676,24 @@ export default function AgentChatPage() {
           </form>
         </div>
 
-        <div className="card" style={{ width: 280, flexShrink: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <div className="card" style={{ width: 280, flexShrink: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 'var(--space-2-5)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <strong style={{ fontSize: 13 }}>Workspace files</strong>
+            <strong style={{ fontSize: 'var(--font-size-sm)' }}>Workspace files</strong>
             <button className="secondary" onClick={loadFiles} title="Refresh">
               ↻
             </button>
           </div>
           {filesError ? <div className="error">{filesError}</div> : null}
             {files.length === 0 ? (
-              <p className="muted" style={{ fontSize: 12, margin: 0 }}>No files yet.</p>
+              <p className="muted" style={{ fontSize: 'var(--font-size-xs)', margin: 0 }}>No files yet.</p>
             ) : (
               files.map((f) => (
-                <div key={f.id} style={{ borderTop: '1px solid var(--color-border)', paddingTop: 8, fontSize: 12 }}>
+                <div key={f.id} style={{ borderTop: '1px solid var(--color-border)', paddingTop: 'var(--space-2)', fontSize: 'var(--font-size-xs)' }}>
                   <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={f.filename}>
                     {f.filename}
                   </div>
-                  <div className="muted" style={{ fontSize: 11, marginBottom: 4 }}>{formatFileSize(f.sizeBytes)}</div>
-                  <div style={{ display: 'flex', gap: 6 }}>
+                  <div className="muted" style={{ fontSize: 'var(--font-size-2xs)', marginBottom: 'var(--space-1)' }}>{formatFileSize(f.sizeBytes)}</div>
+                  <div style={{ display: 'flex', gap: 'var(--space-1-5)' }}>
                     <button className="secondary" onClick={() => handleDownloadFile(f.id)}>
                       Open
                     </button>
@@ -708,9 +708,9 @@ export default function AgentChatPage() {
               type="file"
               disabled={uploadingFile}
               onChange={(e) => handleUploadFile(e.target.files?.[0])}
-              style={{ marginTop: 8 }}
+              style={{ marginTop: 'var(--space-2)' }}
             />
-            {uploadingFile ? <span className="muted" style={{ fontSize: 12 }}>Uploading…</span> : null}
+            {uploadingFile ? <span className="muted" style={{ fontSize: 'var(--font-size-xs)' }}>Uploading…</span> : null}
         </div>
       </div>
     </div>
