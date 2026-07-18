@@ -8,6 +8,41 @@ on:
 jobs:
   lint-typecheck-test-build:
     runs-on: ubuntu-latest
+    # Discovered 2026-07-18: this job's "Lint, typecheck, test" step has been
+    # failing since 2026-07-12 (every push since) with ECONNREFUSED on
+    # 127.0.0.1:5432/6379 — @o2n/gateway's vitest suite hits a real Postgres/
+    # Redis (test-support/db.ts, redis.ts), and this workflow never provided
+    # either. MinIO-gated tests (object-storage.test.ts, backup-service.ts's
+    # real-MinIO describe block) stay skipped in CI on purpose — they check
+    # `describeIfMinio`/`minioAvailable` and gracefully no-op when
+    # MINIO_ENDPOINT is unset, same as pg_dump/pg_restore-gated backup tests
+    # skip when those binaries aren't on the runner's PATH.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: o2n
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/o2n
+      REDIS_URL: redis://localhost:6379
     steps:
       # This repo (openon4net-runtime) is nested as apps/openon4net-runtime inside the
       # parent openon4net monorepo, which owns pnpm-workspace.yaml, turbo.json,
@@ -58,6 +93,16 @@ jobs:
       - name: Build (all packages, full dependency graph)
         working-directory: parent
         run: pnpm turbo run build
+
+      # Schema must exist before the test step's vitest suites run (they
+      # assume it, same as any local dev run of the gateway with
+      # DB_AUTO_MIGRATE on). Calling scripts/migrate.mjs directly (not via
+      # `pnpm run migrate`) since that npm script's `--env-file=../.env`
+      # requires a dotenv file this checkout doesn't have — the script
+      # itself just reads process.env.DATABASE_URL, already set above.
+      - name: Run database migrations
+        working-directory: parent/apps/openon4net-runtime/gateway
+        run: node scripts/migrate.mjs
 
       - name: Lint, typecheck, test
         working-directory: parent
