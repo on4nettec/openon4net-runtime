@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
-import { api, loadSession, ApiError, type PublisherPlugin, type PublisherSkill } from '@/lib/api-client';
+import { api, loadSession, ApiError, type PublisherPlugin, type PublisherSkill, type Session } from '@/lib/api-client';
+import { TopBar } from '@/components/TopBar';
 
 const EXAMPLE_MANIFEST = JSON.stringify({ configSchema: [{ key: 'apiKey', label: 'API Key', type: 'string' }] }, null, 2);
 const EXAMPLE_DEFINITION = JSON.stringify(
@@ -15,6 +15,7 @@ const EXAMPLE_DEFINITION = JSON.stringify(
 export default function PublisherDashboardPage() {
   const router = useRouter();
   const [ready, setReady] = useState(false);
+  const [session, setSession] = useState<Session | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const [publisherSlug, setPublisherSlug] = useState('');
@@ -29,11 +30,12 @@ export default function PublisherDashboardPage() {
   const [submitError, setSubmitError] = useState<string | null>(null);
 
   useEffect(() => {
-    const session = loadSession();
-    if (!session) {
+    const s = loadSession();
+    if (!s) {
       router.push('/login');
       return;
     }
+    setSession(s);
     setReady(true);
     api
       .getOrganization()
@@ -126,16 +128,11 @@ export default function PublisherDashboardPage() {
 
   return (
     <div>
-      <div className="topbar">
-        <Link href="/marketplace">← Marketplace</Link>
-        <nav>
-          <strong>Publisher Dashboard</strong>
-        </nav>
-      </div>
+      {session ? <TopBar session={session} /> : null}
 
       <div className="page">
-        <h1 style={{ fontSize: 20 }}>Publisher Dashboard</h1>
-        <p style={{ color: '#9aa0aa', fontSize: 14 }}>
+        <h1 style={{ fontSize: 'var(--font-size-xl)' }}>Publisher Dashboard</h1>
+        <p style={{ color: 'var(--color-muted-foreground)', fontSize: 14 }}>
           Submit Skills and Plugins to the Marketplace, and see everything you've published under your publisher
           slug. There's no per-publisher account system yet (MVP-lite) — anyone with{' '}
           <code>marketplace:publish</code> can submit under any slug.
@@ -215,7 +212,7 @@ export default function PublisherDashboardPage() {
               {plugins.length > 0 ? (
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, marginTop: 16 }}>
                   <thead>
-                    <tr style={{ textAlign: 'left', color: '#9aa0aa', fontSize: 11 }}>
+                    <tr style={{ textAlign: 'left', color: 'var(--color-muted-foreground)', fontSize: 11 }}>
                       <th style={{ paddingBottom: 6 }}>Name</th>
                       <th style={{ paddingBottom: 6 }}>Latest version</th>
                       <th style={{ paddingBottom: 6 }}>Status</th>
@@ -223,10 +220,10 @@ export default function PublisherDashboardPage() {
                   </thead>
                   <tbody>
                     {plugins.map((plugin) => (
-                      <tr key={plugin.pluginId} style={{ borderTop: '1px solid #2c3038' }}>
+                      <tr key={plugin.pluginId} style={{ borderTop: '1px solid var(--color-border)' }}>
                         <td style={{ padding: '4px 0' }}>{plugin.name}</td>
-                        <td style={{ padding: '4px 0', color: '#9aa0aa' }}>{plugin.latestVersion ?? '—'}</td>
-                        <td style={{ padding: '4px 0', color: '#9aa0aa' }}>{plugin.latestVersionStatus ?? plugin.status}</td>
+                        <td style={{ padding: '4px 0', color: 'var(--color-muted-foreground)' }}>{plugin.latestVersion ?? '—'}</td>
+                        <td style={{ padding: '4px 0', color: 'var(--color-muted-foreground)' }}>{plugin.latestVersionStatus ?? plugin.status}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -280,7 +277,7 @@ export default function PublisherDashboardPage() {
               {skills.length > 0 ? (
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, marginTop: 16 }}>
                   <thead>
-                    <tr style={{ textAlign: 'left', color: '#9aa0aa', fontSize: 11 }}>
+                    <tr style={{ textAlign: 'left', color: 'var(--color-muted-foreground)', fontSize: 11 }}>
                       <th style={{ paddingBottom: 6 }}>Name</th>
                       <th style={{ paddingBottom: 6 }}>Price</th>
                       <th style={{ paddingBottom: 6 }}>Status</th>
@@ -288,12 +285,12 @@ export default function PublisherDashboardPage() {
                   </thead>
                   <tbody>
                     {skills.map((skill) => (
-                      <tr key={skill.skillId} style={{ borderTop: '1px solid #2c3038' }}>
+                      <tr key={skill.skillId} style={{ borderTop: '1px solid var(--color-border)' }}>
                         <td style={{ padding: '4px 0' }}>{skill.name}</td>
-                        <td style={{ padding: '4px 0', color: '#9aa0aa' }}>
+                        <td style={{ padding: '4px 0', color: 'var(--color-muted-foreground)' }}>
                           {skill.priceCents === 0 ? 'Free' : `$${(skill.priceCents / 100).toFixed(2)}`}
                         </td>
-                        <td style={{ padding: '4px 0', color: '#9aa0aa' }}>{skill.status}</td>
+                        <td style={{ padding: '4px 0', color: 'var(--color-muted-foreground)' }}>{skill.status}</td>
                       </tr>
                     ))}
                   </tbody>

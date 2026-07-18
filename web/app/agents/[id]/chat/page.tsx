@@ -165,7 +165,7 @@ export default function AgentChatPage() {
             <span
               style={{
                 fontSize: 12,
-                color: rateLimit.usedThisMinute >= rateLimit.limitPerMinute ? '#f2555a' : '#9aa0aa',
+                color: rateLimit.usedThisMinute >= rateLimit.limitPerMinute ? 'var(--color-error)' : 'var(--color-muted-foreground)',
               }}
               title="Requests this minute"
             >
@@ -181,7 +181,7 @@ export default function AgentChatPage() {
 
         <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 10 }}>
           {messages.length === 0 ? (
-            <p style={{ color: '#9aa0aa' }}>Say hello to {agent?.name ?? 'your agent'} to start the conversation.</p>
+            <p style={{ color: 'var(--color-muted-foreground)' }}>Say hello to {agent?.name ?? 'your agent'} to start the conversation.</p>
           ) : null}
           {messages.map((m, i) => (
             <div
@@ -190,7 +190,7 @@ export default function AgentChatPage() {
               style={{
                 alignSelf: m.role === 'user' ? 'flex-end' : 'flex-start',
                 maxWidth: '75%',
-                background: m.role === 'user' ? '#22406b' : '#171a20',
+                background: m.role === 'user' ? 'var(--color-primary-subtle)' : 'var(--color-surface)',
               }}
             >
               {m.content || (m.pending ? '…' : '')}

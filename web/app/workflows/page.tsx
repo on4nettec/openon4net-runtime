@@ -3,7 +3,8 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { api, loadSession, ApiError, downloadJson, type Workflow, type WorkflowRun } from '@/lib/api-client';
+import { api, loadSession, ApiError, downloadJson, type Session, type Workflow, type WorkflowRun } from '@/lib/api-client';
+import { TopBar } from '@/components/TopBar';
 
 const EXAMPLE_DEFINITION = JSON.stringify(
   {
@@ -19,6 +20,7 @@ const EXAMPLE_DEFINITION = JSON.stringify(
 export default function WorkflowsPage() {
   const router = useRouter();
   const [ready, setReady] = useState(false);
+  const [session, setSession] = useState<Session | null>(null);
   const [workflows, setWorkflows] = useState<Workflow[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -43,11 +45,12 @@ export default function WorkflowsPage() {
   }
 
   useEffect(() => {
-    const session = loadSession();
-    if (!session) {
+    const s = loadSession();
+    if (!s) {
       router.push('/login');
       return;
     }
+    setSession(s);
     setReady(true);
     void loadWorkflows();
   }, [router]);
@@ -130,27 +133,11 @@ export default function WorkflowsPage() {
 
   return (
     <div>
-      <div className="topbar">
-        <Link href="/agents">← Agents</Link>
-        <nav>
-          <Link href="/workspaces">Workspaces</Link>
-          <Link href="/users">Users</Link>
-          <Link href="/roles">Roles & Permissions</Link>
-          <Link href="/audit">Audit Log</Link>
-          <Link href="/skills">Skills</Link>
-          <Link href="/skill-proposals">Skill Proposals</Link>
-          <Link href="/marketplace">Marketplace</Link>
-          <Link href="/approvals">Approvals</Link>
-          <strong>Workflows</strong>
-          <Link href="/webhooks">Webhooks</Link>
-          <Link href="/policies">Policies</Link>
-          <Link href="/settings">Settings</Link>
-        </nav>
-      </div>
+      {session ? <TopBar session={session} /> : null}
 
       <div className="page">
-        <h1 style={{ fontSize: 20 }}>Workflows</h1>
-        <p style={{ color: '#9aa0aa', fontSize: 14 }}>
+        <h1 style={{ fontSize: 'var(--font-size-xl)' }}>Workflows</h1>
+        <p style={{ color: 'var(--color-muted-foreground)', fontSize: 14 }}>
           Multi-step orchestration across agents, tools, and human approvals. Steps run in order unless a{' '}
           <code>condition</code> step branches or a <code>parallel</code> step fans out. Runs manually, on a
           schedule, or via an inbound webhook (see <Link href="/webhooks">Webhooks</Link>).
@@ -164,25 +151,25 @@ export default function WorkflowsPage() {
           <>
             <div className="card" style={{ marginBottom: 16 }}>
               {workflows.length === 0 ? (
-                <p style={{ color: '#9aa0aa', margin: 0 }}>No workflows yet — create one below.</p>
+                <p style={{ color: 'var(--color-muted-foreground)', margin: 0 }}>No workflows yet — create one below.</p>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                   {workflows.map((workflow) => {
                     const busy = busyId === workflow.id;
                     const runsOpen = runsOpenId === workflow.id;
                     return (
-                      <div key={workflow.id} style={{ borderTop: '1px solid #2c3038', paddingTop: 10 }}>
+                      <div key={workflow.id} style={{ borderTop: '1px solid var(--color-border)', paddingTop: 10 }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                           <div>
                             <strong>{workflow.name}</strong>{' '}
-                            <span style={{ color: '#9aa0aa', fontSize: 12 }}>
+                            <span style={{ color: 'var(--color-muted-foreground)', fontSize: 12 }}>
                               {workflow.status} · {workflow.definition.steps.length} steps ·{' '}
                               {workflow.trigger.type === 'scheduled'
                                 ? `every ${workflow.trigger.intervalMinutes}m`
                                 : workflow.trigger.type}
                             </span>
                             {workflow.description ? (
-                              <div style={{ color: '#9aa0aa', fontSize: 12 }}>{workflow.description}</div>
+                              <div style={{ color: 'var(--color-muted-foreground)', fontSize: 12 }}>{workflow.description}</div>
                             ) : null}
                           </div>
                           <div style={{ display: 'flex', gap: 8 }}>
@@ -202,11 +189,11 @@ export default function WorkflowsPage() {
                           <div style={{ marginTop: 8 }}>
                             {runsError ? <div className="error">{runsError}</div> : null}
                             {runs.length === 0 ? (
-                              <p style={{ color: '#9aa0aa', fontSize: 13, margin: 0 }}>No runs yet.</p>
+                              <p style={{ color: 'var(--color-muted-foreground)', fontSize: 13, margin: 0 }}>No runs yet.</p>
                             ) : (
                               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                                 <thead>
-                                  <tr style={{ textAlign: 'left', color: '#9aa0aa', fontSize: 11 }}>
+                                  <tr style={{ textAlign: 'left', color: 'var(--color-muted-foreground)', fontSize: 11 }}>
                                     <th style={{ paddingBottom: 6 }}>Started</th>
                                     <th style={{ paddingBottom: 6 }}>Status</th>
                                     <th style={{ paddingBottom: 6 }}>Current step</th>
@@ -214,12 +201,12 @@ export default function WorkflowsPage() {
                                 </thead>
                                 <tbody>
                                   {runs.map((run) => (
-                                    <tr key={run.id} style={{ borderTop: '1px solid #2c3038' }}>
+                                    <tr key={run.id} style={{ borderTop: '1px solid var(--color-border)' }}>
                                       <td style={{ padding: '4px 0' }}>
                                         {run.startedAt ? new Date(run.startedAt).toLocaleString() : '—'}
                                       </td>
                                       <td style={{ padding: '4px 0' }}>{run.status}</td>
-                                      <td style={{ padding: '4px 0', color: '#9aa0aa' }}>{run.currentStepId ?? '—'}</td>
+                                      <td style={{ padding: '4px 0', color: 'var(--color-muted-foreground)' }}>{run.currentStepId ?? '—'}</td>
                                     </tr>
                                   ))}
                                 </tbody>

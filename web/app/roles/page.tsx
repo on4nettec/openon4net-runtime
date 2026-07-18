@@ -2,8 +2,8 @@
 
 import { useEffect, useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
-import { api, loadSession, ApiError } from '@/lib/api-client';
+import { api, loadSession, ApiError, type Session } from '@/lib/api-client';
+import { TopBar } from '@/components/TopBar';
 
 interface Role {
   id: string;
@@ -51,6 +51,7 @@ const PERMISSION_CATALOG: { resource: string; permissions: string[] }[] = [
 export default function RolesPage() {
   const router = useRouter();
   const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
+  const [session, setSession] = useState<Session | null>(null);
   const [roles, setRoles] = useState<Role[]>([]);
   const [error, setError] = useState<string | null>(null);
   // Local checkbox state per role, independent from saved state until Save is pressed.
@@ -74,12 +75,13 @@ export default function RolesPage() {
   }
 
   useEffect(() => {
-    const session = loadSession();
-    if (!session) {
+    const s = loadSession();
+    if (!s) {
       router.push('/login');
       return;
     }
-    const admin = session.role === 'admin';
+    setSession(s);
+    const admin = s.role === 'admin';
     setIsAdmin(admin);
     if (admin) loadRoles();
   }, [router]);
@@ -140,25 +142,11 @@ export default function RolesPage() {
 
   return (
     <div>
-      <div className="topbar">
-        <Link href="/agents">← Agents</Link>
-        <nav>
-          <strong>Roles & Permissions</strong>
-          <Link href="/workspaces">Workspaces</Link>
-          <Link href="/users">Users</Link>
-          <Link href="/skills">Skills</Link>
-          <Link href="/skill-proposals">Skill Proposals</Link>
-          <Link href="/marketplace">Marketplace</Link>
-          <Link href="/approvals">Approvals</Link>
-          <Link href="/policies">Policies</Link>
-          <Link href="/audit">Audit Log</Link>
-          <Link href="/settings">Settings</Link>
-        </nav>
-      </div>
+      {session ? <TopBar session={session} /> : null}
 
       <div className="page">
-        <h1 style={{ fontSize: 20 }}>Roles & Permissions</h1>
-        <p style={{ color: '#9aa0aa', fontSize: 14 }}>
+        <h1 style={{ fontSize: 'var(--font-size-xl)' }}>Roles & Permissions</h1>
+        <p style={{ color: 'var(--color-muted-foreground)', fontSize: 14 }}>
           Edit what each role can do — changes apply immediately, no restart or re-login needed for
           already-signed-in users.
         </p>
@@ -166,7 +154,7 @@ export default function RolesPage() {
         {error ? <div className="error">{error}</div> : null}
 
         {isAdmin === false ? (
-          <p style={{ color: '#9aa0aa' }}>Only organization admins can view or edit roles.</p>
+          <p style={{ color: 'var(--color-muted-foreground)' }}>Only organization admins can view or edit roles.</p>
         ) : isAdmin === null || (roles.length === 0 && !error) ? (
           <p>Loading…</p>
         ) : (
@@ -179,7 +167,7 @@ export default function RolesPage() {
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
                     <strong style={{ textTransform: 'capitalize' }}>{role.name}</strong>
                     {role.isSystem ? (
-                      <span style={{ color: '#9aa0aa', fontSize: 12 }}>system role</span>
+                      <span style={{ color: 'var(--color-muted-foreground)', fontSize: 12 }}>system role</span>
                     ) : (
                       <button
                         className="secondary"
@@ -193,7 +181,7 @@ export default function RolesPage() {
 
                   {PERMISSION_CATALOG.map((group) => (
                     <div key={group.resource} style={{ marginBottom: 10 }}>
-                      <div style={{ color: '#9aa0aa', fontSize: 12, marginBottom: 4, textTransform: 'uppercase' }}>
+                      <div style={{ color: 'var(--color-muted-foreground)', fontSize: 12, marginBottom: 4, textTransform: 'uppercase' }}>
                         {group.resource}
                       </div>
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
@@ -215,7 +203,7 @@ export default function RolesPage() {
                     <button onClick={() => handleSave(role.id)} disabled={!dirty || savingId === role.id}>
                       {savingId === role.id ? 'Saving…' : 'Save'}
                     </button>
-                    {savedId === role.id ? <span style={{ color: '#4caf7d', fontSize: 13 }}>✓ Saved</span> : null}
+                    {savedId === role.id ? <span style={{ color: 'var(--color-success)', fontSize: 13 }}>✓ Saved</span> : null}
                   </div>
                 </div>
               );
@@ -238,7 +226,7 @@ export default function RolesPage() {
                   {creating ? 'Adding…' : 'Add role'}
                 </button>
               </form>
-              <p style={{ color: '#9aa0aa', fontSize: 13, marginBottom: 0, marginTop: 10 }}>
+              <p style={{ color: 'var(--color-muted-foreground)', fontSize: 13, marginBottom: 0, marginTop: 10 }}>
                 Starts with zero permissions — check boxes above and Save once it appears in the list.
               </p>
             </div>

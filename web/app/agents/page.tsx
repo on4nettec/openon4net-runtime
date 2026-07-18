@@ -5,8 +5,9 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import type { Agent, KpiDefinition, Organization, User, Workspace } from '@o2n/shared';
 import { AGENT_ROLE_CATALOG } from '@o2n/shared';
-import { api, loadSession, clearSession, ApiError, type Session } from '@/lib/api-client';
+import { api, loadSession, ApiError, type Session } from '@/lib/api-client';
 import { applyDocumentDirection } from '@/lib/i18n';
+import { TopBar } from '@/components/TopBar';
 
 // RT-083 — offered up front without typing a code by hand; the gateway can
 // actually generate any ISO-shaped code on demand (GET /v1/locales/:lang).
@@ -167,11 +168,6 @@ export default function AgentsPage() {
     } finally {
       setCreating(false);
     }
-  }
-
-  function handleLogout() {
-    clearSession();
-    router.push('/login');
   }
 
   async function handlePause(agentId: string) {
@@ -363,26 +359,11 @@ export default function AgentsPage() {
 
   return (
     <div>
-      <div className="topbar">
-        <strong>{session.organizationName}</strong>
-        <nav>
-          <Link href="/agents">Agents</Link>
-          <Link href="/skills">Skills</Link>
-          <Link href="/skill-proposals">Skill Proposals</Link>
-          <Link href="/marketplace">Marketplace</Link>
-          <Link href="/approvals">Approvals</Link>
-          <Link href="/workflows">Workflows</Link>
-          <Link href="/outcomes">Outcomes</Link>
-          <Link href="/settings">Settings</Link>
-          <button className="secondary" onClick={handleLogout}>
-            Sign out
-          </button>
-        </nav>
-      </div>
+      <TopBar session={session} />
 
       <div className="page">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-          <h1 style={{ fontSize: 20, margin: 0 }}>Digital Employees</h1>
+          <h1 style={{ fontSize: 'var(--font-size-xl)', margin: 0 }}>Digital Employees</h1>
           <button onClick={() => setShowCreate((v) => !v)}>{showCreate ? 'Cancel' : 'New agent'}</button>
         </div>
 
@@ -460,7 +441,7 @@ export default function AgentsPage() {
         {loading ? (
           <p>Loading…</p>
         ) : agents.length === 0 ? (
-          <p style={{ color: '#9aa0aa' }}>No agents yet — create one to get started.</p>
+          <p style={{ color: 'var(--color-muted-foreground)' }}>No agents yet — create one to get started.</p>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             {agents.map((agent) => {
@@ -475,22 +456,22 @@ export default function AgentsPage() {
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <Link href={`/agents/${agent.id}/chat`} style={{ textDecoration: 'none' }}>
                       <div style={{ fontWeight: 600 }}>{agent.name}</div>
-                      <div style={{ color: '#9aa0aa', fontSize: 13 }}>{agent.role}</div>
+                      <div style={{ color: 'var(--color-muted-foreground)', fontSize: 13 }}>{agent.role}</div>
                       {agent.reportsTo ? (
-                        <div style={{ color: '#9aa0aa', fontSize: 12 }}>
+                        <div style={{ color: 'var(--color-muted-foreground)', fontSize: 12 }}>
                           Reports to: {agents.find((a) => a.id === agent.reportsTo)?.name ?? agent.reportsTo}
                         </div>
                       ) : null}
                       <BudgetBar usedCents={agent.usedBudgetCents} limitCents={agent.monthlyBudgetCents} />
                       {agentScheduleInfo.enabled ? (
-                        <div style={{ color: '#4caf7d', fontSize: 11, marginTop: 4 }}>
+                        <div style={{ color: 'var(--color-success)', fontSize: 11, marginTop: 4 }}>
                           ⏱ every {agentScheduleInfo.intervalMinutes}m
                         </div>
                       ) : null}
                       {agentKpis.length > 0 ? (
                         <div style={{ marginTop: 6 }}>
                           {agentKpis.map((kpi, i) => (
-                            <div key={i} style={{ fontSize: 11, color: '#9aa0aa' }}>
+                            <div key={i} style={{ fontSize: 11, color: 'var(--color-muted-foreground)' }}>
                               {kpi.name}: {kpi.current ?? '—'} / {kpi.target}
                             </div>
                           ))}
@@ -498,7 +479,7 @@ export default function AgentsPage() {
                       ) : null}
                     </Link>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                      <span style={{ color: '#9aa0aa', fontSize: 13 }}>{agent.status}</span>
+                      <span style={{ color: 'var(--color-muted-foreground)', fontSize: 13 }}>{agent.status}</span>
                       <button className="secondary" onClick={() => toggleSchedule(agent)}>
                         {scheduleOpen ? 'Cancel' : 'Schedule'}
                       </button>
@@ -528,7 +509,7 @@ export default function AgentsPage() {
                   </div>
 
                   {scheduleOpen ? (
-                    <div style={{ borderTop: '1px solid #2c3038', marginTop: 12, paddingTop: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    <div style={{ borderTop: '1px solid var(--color-border)', marginTop: 12, paddingTop: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
                       {scheduleError ? <div className="error">{scheduleError}</div> : null}
                       <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                         <input
@@ -565,13 +546,13 @@ export default function AgentsPage() {
                   ) : null}
 
                   {kpisOpen ? (
-                    <div style={{ borderTop: '1px solid #2c3038', marginTop: 12, paddingTop: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    <div style={{ borderTop: '1px solid var(--color-border)', marginTop: 12, paddingTop: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
                       {kpisError ? <div className="error">{kpisError}</div> : null}
-                      <div style={{ color: '#9aa0aa', fontSize: 12 }}>
+                      <div style={{ color: 'var(--color-muted-foreground)', fontSize: 12 }}>
                         Targets set here; current values can be updated via the same form or the API as work progresses.
                       </div>
                       {kpiDrafts.map((kpi, i) => (
-                        <div key={i} style={{ display: 'flex', flexDirection: 'column', gap: 6, paddingBottom: 8, borderBottom: '1px solid #2c3038' }}>
+                        <div key={i} style={{ display: 'flex', flexDirection: 'column', gap: 6, paddingBottom: 8, borderBottom: '1px solid var(--color-border)' }}>
                           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                             <input
                               placeholder="KPI name"
@@ -597,7 +578,7 @@ export default function AgentsPage() {
                             </button>
                           </div>
                           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                            <span style={{ fontSize: 11, color: '#9aa0aa' }}>Auto-compute from:</span>
+                            <span style={{ fontSize: 11, color: 'var(--color-muted-foreground)' }}>Auto-compute from:</span>
                             <select
                               value={kpi.metricType}
                               onChange={(e) => updateKpiMetricType(i, e.target.value as KpiDefinition['metricType'])}
@@ -609,7 +590,7 @@ export default function AgentsPage() {
                             </select>
                             {kpi.metricType !== 'manual' ? (
                               <>
-                                <span style={{ fontSize: 11, color: '#9aa0aa' }}>over trailing</span>
+                                <span style={{ fontSize: 11, color: 'var(--color-muted-foreground)' }}>over trailing</span>
                                 <input
                                   type="number"
                                   min={1}
@@ -617,7 +598,7 @@ export default function AgentsPage() {
                                   onChange={(e) => updateKpiWindowDays(i, Number(e.target.value))}
                                   style={{ width: 60 }}
                                 />
-                                <span style={{ fontSize: 11, color: '#9aa0aa' }}>days, updated once daily</span>
+                                <span style={{ fontSize: 11, color: 'var(--color-muted-foreground)' }}>days, updated once daily</span>
                               </>
                             ) : null}
                           </div>
@@ -635,21 +616,21 @@ export default function AgentsPage() {
                   ) : null}
 
                   {accessOpen ? (
-                    <div style={{ borderTop: '1px solid #2c3038', marginTop: 12, paddingTop: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    <div style={{ borderTop: '1px solid var(--color-border)', marginTop: 12, paddingTop: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
                       {accessError ? <div className="error">{accessError}</div> : null}
-                      <div style={{ color: '#9aa0aa', fontSize: 12 }}>
+                      <div style={{ color: 'var(--color-muted-foreground)', fontSize: 12 }}>
                         Who besides admins can see and use this agent:
                       </div>
                       {accessBindings.length === 0 ? (
-                        <div style={{ color: '#9aa0aa', fontSize: 13 }}>No one granted yet.</div>
+                        <div style={{ color: 'var(--color-muted-foreground)', fontSize: 13 }}>No one granted yet.</div>
                       ) : (
                         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                           <tbody>
                             {accessBindings.map((b) => (
-                              <tr key={b.id} style={{ borderTop: '1px solid #2c3038' }}>
+                              <tr key={b.id} style={{ borderTop: '1px solid var(--color-border)' }}>
                                 <td style={{ padding: '6px 0' }}>{b.userName}</td>
-                                <td style={{ padding: '6px 0', color: '#9aa0aa' }}>{b.userEmail}</td>
-                                <td style={{ padding: '6px 0', color: '#9aa0aa' }}>{b.accessRole}</td>
+                                <td style={{ padding: '6px 0', color: 'var(--color-muted-foreground)' }}>{b.userEmail}</td>
+                                <td style={{ padding: '6px 0', color: 'var(--color-muted-foreground)' }}>{b.accessRole}</td>
                                 <td style={{ padding: '6px 0' }}>
                                   <button
                                     className="secondary"
@@ -705,13 +686,13 @@ function formatCents(cents: number): string {
 
 function BudgetBar({ usedCents, limitCents }: { usedCents: number; limitCents: number }) {
   const pct = limitCents > 0 ? Math.min((usedCents / limitCents) * 100, 100) : 0;
-  const color = pct >= 90 ? '#f2555a' : pct >= 70 ? '#e0a83b' : '#3b6fe0';
+  const color = pct >= 90 ? 'var(--color-error)' : pct >= 70 ? 'var(--color-warning)' : 'var(--color-primary)';
   return (
     <div style={{ marginTop: 6, width: 160 }}>
-      <div style={{ height: 4, background: '#2c3038', borderRadius: 2, overflow: 'hidden' }}>
+      <div style={{ height: 4, background: 'var(--color-border)', borderRadius: 2, overflow: 'hidden' }}>
         <div style={{ height: '100%', width: `${pct}%`, background: color }} />
       </div>
-      <div style={{ color: '#9aa0aa', fontSize: 11, marginTop: 3 }}>
+      <div style={{ color: 'var(--color-muted-foreground)', fontSize: 11, marginTop: 3 }}>
         {formatCents(usedCents)} / {formatCents(limitCents)}
       </div>
     </div>
@@ -735,7 +716,7 @@ function OrgChart({ agents }: { agents: Agent[] }) {
       <div key={agent.id} style={{ marginLeft: depth * 20, marginTop: 6 }}>
         <div style={{ fontSize: 13 }}>
           <span style={{ fontWeight: 600 }}>{agent.name}</span>{' '}
-          <span style={{ color: '#9aa0aa' }}>({agent.role})</span>
+          <span style={{ color: 'var(--color-muted-foreground)' }}>({agent.role})</span>
         </div>
         {children.map((child) => renderNode(child, depth + 1))}
       </div>

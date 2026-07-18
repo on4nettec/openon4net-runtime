@@ -36,7 +36,7 @@ export default function LoginPage() {
   return (
     <div className="page" style={{ maxWidth: 420, marginTop: 80 }}>
       <h1 style={{ fontSize: 22, marginBottom: 4 }}>Open on4net</h1>
-      <p style={{ color: '#9aa0aa', marginTop: 0, marginBottom: 24, fontSize: 14 }}>
+      <p style={{ color: 'var(--color-muted-foreground)', marginTop: 0, marginBottom: 24, fontSize: 14 }}>
         Sign in with your organization&apos;s dev API key. New slugs create a fresh organization.
       </p>
       <form className="card" onSubmit={handleSubmit}>

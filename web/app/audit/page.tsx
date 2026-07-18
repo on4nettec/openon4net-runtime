@@ -2,14 +2,15 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
 import type { Agent, AuditLog } from '@o2n/shared';
-import { api, loadSession, ApiError, downloadAuditLogExport } from '@/lib/api-client';
+import { api, loadSession, ApiError, downloadAuditLogExport, type Session } from '@/lib/api-client';
+import { TopBar } from '@/components/TopBar';
 
 const PAGE_SIZE = 25;
 
 export default function AuditPage() {
   const router = useRouter();
+  const [session, setSession] = useState<Session | null>(null);
   const [logs, setLogs] = useState<AuditLog[]>([]);
   const [total, setTotal] = useState(0);
   const [offset, setOffset] = useState(0);
@@ -68,10 +69,12 @@ export default function AuditPage() {
   }
 
   useEffect(() => {
-    if (!loadSession()) {
+    const s = loadSession();
+    if (!s) {
       router.push('/login');
       return;
     }
+    setSession(s);
     api
       .listAgents()
       .then((agents) => setAgentsById(Object.fromEntries(agents.map((a) => [a.id, a]))))
@@ -83,26 +86,11 @@ export default function AuditPage() {
 
   return (
     <div>
-      <div className="topbar">
-        <Link href="/agents">← Agents</Link>
-        <nav>
-          <strong>Audit Log</strong>
-          <Link href="/settings">Settings</Link>
-          <Link href="/workspaces">Workspaces</Link>
-          <Link href="/roles">Roles & Permissions</Link>
-          <Link href="/users">Users</Link>
-          <Link href="/skills">Skills</Link>
-          <Link href="/skill-proposals">Skill Proposals</Link>
-          <Link href="/marketplace">Marketplace</Link>
-          <Link href="/approvals">Approvals</Link>
-          <Link href="/workflows">Workflows</Link>
-          <Link href="/policies">Policies</Link>
-        </nav>
-      </div>
+      {session ? <TopBar session={session} /> : null}
 
       <div className="page" style={{ maxWidth: 960 }}>
-        <h1 style={{ fontSize: 20 }}>Audit Log</h1>
-        <p style={{ color: '#9aa0aa', fontSize: 14 }}>
+        <h1 style={{ fontSize: 'var(--font-size-xl)' }}>Audit Log</h1>
+        <p style={{ color: 'var(--color-muted-foreground)', fontSize: 14 }}>
           Every governed action — chats, approvals, config changes — organization-wide, newest first.
         </p>
 
@@ -117,7 +105,7 @@ export default function AuditPage() {
             {verifying ? 'Verifying…' : 'Verify integrity'}
           </button>
           {verifyResult ? (
-            <span style={{ fontSize: 13, color: verifyResult.valid ? '#4caf7d' : '#f2555a' }}>
+            <span style={{ fontSize: 13, color: verifyResult.valid ? 'var(--color-success)' : 'var(--color-error)' }}>
               {verifyResult.valid
                 ? `✅ Chain intact (${verifyResult.checkedCount} entries checked)`
                 : `❌ Broken at entry ${verifyResult.brokenAtId}`}
@@ -128,13 +116,13 @@ export default function AuditPage() {
         {error ? <div className="error">{error}</div> : null}
 
         {forbidden ? (
-          <p style={{ color: '#9aa0aa' }}>You don&apos;t have permission to view the audit log (needs audit:read).</p>
+          <p style={{ color: 'var(--color-muted-foreground)' }}>You don&apos;t have permission to view the audit log (needs audit:read).</p>
         ) : (
           <>
             <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                 <thead>
-                  <tr style={{ textAlign: 'left', color: '#9aa0aa', fontSize: 12 }}>
+                  <tr style={{ textAlign: 'left', color: 'var(--color-muted-foreground)', fontSize: 12 }}>
                     <th style={{ padding: '10px 14px' }}>Time</th>
                     <th style={{ padding: '10px 14px' }}>Action</th>
                     <th style={{ padding: '10px 14px' }}>Agent</th>
@@ -146,14 +134,14 @@ export default function AuditPage() {
                 </thead>
                 <tbody>
                   {logs.map((log) => (
-                    <tr key={log.id} style={{ borderTop: '1px solid #2c3038' }}>
+                    <tr key={log.id} style={{ borderTop: '1px solid var(--color-border)' }}>
                       <td style={{ padding: '10px 14px', whiteSpace: 'nowrap' }}>
                         {new Date(log.createdAt).toLocaleString()}
                       </td>
                       <td style={{ padding: '10px 14px' }}>{log.actionType}</td>
                       <td style={{ padding: '10px 14px' }}>{log.agentId ? (agentsById[log.agentId]?.name ?? log.agentId) : '—'}</td>
                       <td style={{ padding: '10px 14px' }}>
-                        <span style={{ color: log.status === 'failed' ? '#f2555a' : log.status === 'pending' ? '#e0a83b' : '#4caf7d' }}>
+                        <span style={{ color: log.status === 'failed' ? 'var(--color-error)' : log.status === 'pending' ? 'var(--color-warning)' : 'var(--color-success)' }}>
                           {log.status}
                         </span>
                       </td>
@@ -164,7 +152,7 @@ export default function AuditPage() {
                   ))}
                   {!loading && logs.length === 0 ? (
                     <tr>
-                      <td colSpan={7} style={{ padding: '14px', color: '#9aa0aa' }}>
+                      <td colSpan={7} style={{ padding: '14px', color: 'var(--color-muted-foreground)' }}>
                         No audit entries yet.
                       </td>
                     </tr>
@@ -174,7 +162,7 @@ export default function AuditPage() {
             </div>
 
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 12 }}>
-              <span style={{ color: '#9aa0aa', fontSize: 13 }}>
+              <span style={{ color: 'var(--color-muted-foreground)', fontSize: 13 }}>
                 {total === 0 ? '0 entries' : `${offset + 1}–${Math.min(offset + PAGE_SIZE, total)} of ${total}`}
               </span>
               <div style={{ display: 'flex', gap: 8 }}>

@@ -2,9 +2,9 @@
 
 import { useEffect, useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
 import type { Agent } from '@o2n/shared';
-import { api, loadSession, ApiError } from '@/lib/api-client';
+import { api, loadSession, ApiError, type Session } from '@/lib/api-client';
+import { TopBar } from '@/components/TopBar';
 
 interface KpiWithAgent {
   agentId: string;
@@ -17,7 +17,7 @@ interface KpiWithAgent {
 
 /** Hand-rolled inline SVG sparkline — no charting library dependency for v1 (RT-059). */
 function KpiTrendChart({ values }: { values: number[] }) {
-  if (values.length < 2) return <p style={{ color: '#9aa0aa', fontSize: 12 }}>Not enough history yet.</p>;
+  if (values.length < 2) return <p style={{ color: 'var(--color-muted-foreground)', fontSize: 12 }}>Not enough history yet.</p>;
 
   const width = 240;
   const height = 48;
@@ -30,7 +30,7 @@ function KpiTrendChart({ values }: { values: number[] }) {
 
   return (
     <svg width={width} height={height} style={{ display: 'block' }}>
-      <polyline points={points} fill="none" stroke="#4caf7d" strokeWidth={2} />
+      <polyline points={points} fill="none" stroke="var(--color-success)" strokeWidth={2} />
     </svg>
   );
 }
@@ -38,6 +38,7 @@ function KpiTrendChart({ values }: { values: number[] }) {
 export default function OutcomesPage() {
   const router = useRouter();
   const [ready, setReady] = useState(false);
+  const [session, setSession] = useState<Session | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [kpis, setKpis] = useState<KpiWithAgent[]>([]);
   const [question, setQuestion] = useState('');
@@ -56,11 +57,12 @@ export default function OutcomesPage() {
   >({});
 
   useEffect(() => {
-    const session = loadSession();
-    if (!session) {
+    const s = loadSession();
+    if (!s) {
       router.push('/login');
       return;
     }
+    setSession(s);
     setReady(true);
     api
       .listAgents()
@@ -107,16 +109,11 @@ export default function OutcomesPage() {
 
   return (
     <div>
-      <div className="topbar">
-        <Link href="/agents">← Agents</Link>
-        <nav>
-          <strong>Outcomes</strong>
-        </nav>
-      </div>
+      {session ? <TopBar session={session} /> : null}
 
       <div className="page">
-        <h1 style={{ fontSize: 20 }}>Outcomes</h1>
-        <p style={{ color: '#9aa0aa', fontSize: 14 }}>
+        <h1 style={{ fontSize: 'var(--font-size-xl)' }}>Outcomes</h1>
+        <p style={{ color: 'var(--color-muted-foreground)', fontSize: 14 }}>
           KPI trends across every agent. Non-manual KPIs (action count / cost / success rate) are computed once a
           day from the audit log — set <code>metricType</code> on a KPI in an agent&apos;s panel to enable this.
           Anomaly flags are a simple statistical (Z-score) check, and the projection is a linear trend
@@ -140,7 +137,7 @@ export default function OutcomesPage() {
         {askResult ? (
           <div className="card" style={{ marginBottom: 16 }}>
             {askResult.error ? (
-              <span style={{ color: '#e05a5a' }}>{askResult.error}</span>
+              <span style={{ color: 'var(--color-error)' }}>{askResult.error}</span>
             ) : (
               <span>💬 {askResult.answer}</span>
             )}
@@ -150,7 +147,7 @@ export default function OutcomesPage() {
         {!ready ? (
           <p>Loading…</p>
         ) : kpis.length === 0 ? (
-          <p style={{ color: '#9aa0aa' }}>No KPIs defined yet — add one from an agent&apos;s panel.</p>
+          <p style={{ color: 'var(--color-muted-foreground)' }}>No KPIs defined yet — add one from an agent&apos;s panel.</p>
         ) : (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 16 }}>
             {kpis.map((kpi) => {
@@ -160,9 +157,9 @@ export default function OutcomesPage() {
                 <div key={key} className="card">
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
                     <strong>{kpi.name}</strong>
-                    <span style={{ fontSize: 12, color: '#9aa0aa' }}>{kpi.agentName}</span>
+                    <span style={{ fontSize: 12, color: 'var(--color-muted-foreground)' }}>{kpi.agentName}</span>
                   </div>
-                  <div style={{ fontSize: 13, color: '#9aa0aa', marginTop: 4 }}>
+                  <div style={{ fontSize: 13, color: 'var(--color-muted-foreground)', marginTop: 4 }}>
                     {kpi.current ?? '—'} / {kpi.target}
                     {kpi.metricType !== 'manual' ? ` (auto: ${kpi.metricType})` : ''}
                   </div>
@@ -173,23 +170,23 @@ export default function OutcomesPage() {
                         <KpiTrendChart values={outcome.snapshots.map((s) => s.value)} />
                       </div>
                       {outcome.prediction ? (
-                        <div style={{ fontSize: 12, color: '#9aa0aa', marginTop: 6 }}>
+                        <div style={{ fontSize: 12, color: 'var(--color-muted-foreground)', marginTop: 6 }}>
                           Projected next period: {outcome.prediction.predicted}
                         </div>
                       ) : null}
                       {outcome.anomalies.some((a) => a.isAnomaly) ? (
-                        <div style={{ fontSize: 12, color: '#e0a83b', marginTop: 6 }}>
+                        <div style={{ fontSize: 12, color: 'var(--color-warning)', marginTop: 6 }}>
                           ⚠ Anomaly detected in recent history
                         </div>
                       ) : null}
                       {outcome.insights.map((insight, i) => (
-                        <div key={i} style={{ fontSize: 12, color: '#4caf7d', marginTop: 6 }}>
+                        <div key={i} style={{ fontSize: 12, color: 'var(--color-success)', marginTop: 6 }}>
                           💡 {insight.message}
                         </div>
                       ))}
                     </>
                   ) : (
-                    <p style={{ color: '#9aa0aa', fontSize: 12, marginTop: 10 }}>No trend history yet.</p>
+                    <p style={{ color: 'var(--color-muted-foreground)', fontSize: 12, marginTop: 10 }}>No trend history yet.</p>
                   )}
                 </div>
               );

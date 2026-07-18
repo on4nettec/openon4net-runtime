@@ -2,13 +2,14 @@
 
 import { useEffect, useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
 import type { Agent } from '@o2n/shared';
-import { api, loadSession, ApiError, type WebhookEndpoint, type Workflow } from '@/lib/api-client';
+import { api, loadSession, ApiError, type Session, type WebhookEndpoint, type Workflow } from '@/lib/api-client';
+import { TopBar } from '@/components/TopBar';
 
 export default function WebhooksPage() {
   const router = useRouter();
   const [ready, setReady] = useState(false);
+  const [session, setSession] = useState<Session | null>(null);
   const [endpoints, setEndpoints] = useState<WebhookEndpoint[]>([]);
   const [workflows, setWorkflows] = useState<Workflow[]>([]);
   const [agents, setAgents] = useState<Agent[]>([]);
@@ -32,11 +33,12 @@ export default function WebhooksPage() {
   }
 
   useEffect(() => {
-    const session = loadSession();
-    if (!session) {
+    const s = loadSession();
+    if (!s) {
       router.push('/login');
       return;
     }
+    setSession(s);
     setReady(true);
     void loadAll();
   }, [router]);
@@ -83,16 +85,11 @@ export default function WebhooksPage() {
 
   return (
     <div>
-      <div className="topbar">
-        <Link href="/workflows">← Workflows</Link>
-        <nav>
-          <strong>Webhooks</strong>
-        </nav>
-      </div>
+      {session ? <TopBar session={session} /> : null}
 
       <div className="page">
-        <h1 style={{ fontSize: 20 }}>Webhooks</h1>
-        <p style={{ color: '#9aa0aa', fontSize: 14 }}>
+        <h1 style={{ fontSize: 'var(--font-size-xl)' }}>Webhooks</h1>
+        <p style={{ color: 'var(--color-muted-foreground)', fontSize: 14 }}>
           Inbound webhooks (RT-065). POSTing to an endpoint&apos;s URL starts the target workflow, or sends the
           request body as a chat message to the target agent. The token in the URL is the only credential — treat it
           like a password. Shown once at creation time; it can&apos;t be recovered afterward, only rotated by
@@ -107,14 +104,14 @@ export default function WebhooksPage() {
           <>
             <div className="card" style={{ marginBottom: 16 }}>
               {endpoints.length === 0 ? (
-                <p style={{ color: '#9aa0aa', margin: 0 }}>No webhook endpoints yet — create one below.</p>
+                <p style={{ color: 'var(--color-muted-foreground)', margin: 0 }}>No webhook endpoints yet — create one below.</p>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                   {endpoints.map((endpoint) => (
                     <div
                       key={endpoint.id}
                       style={{
-                        borderTop: '1px solid #2c3038',
+                        borderTop: '1px solid var(--color-border)',
                         paddingTop: 10,
                         display: 'flex',
                         justifyContent: 'space-between',
@@ -123,10 +120,10 @@ export default function WebhooksPage() {
                     >
                       <div>
                         <strong>{endpoint.name}</strong>{' '}
-                        <span style={{ color: '#9aa0aa', fontSize: 12 }}>
+                        <span style={{ color: 'var(--color-muted-foreground)', fontSize: 12 }}>
                           → {endpoint.targetType} · {targetLabel(endpoint)}
                         </span>
-                        <div style={{ color: '#9aa0aa', fontSize: 12 }}>
+                        <div style={{ color: 'var(--color-muted-foreground)', fontSize: 12 }}>
                           {endpoint.lastTriggeredAt
                             ? `Last triggered ${new Date(endpoint.lastTriggeredAt).toLocaleString()}`
                             : 'Never triggered'}
@@ -142,7 +139,7 @@ export default function WebhooksPage() {
             </div>
 
             {newToken ? (
-              <div className="card" style={{ marginBottom: 16, borderColor: '#4caf7d' }}>
+              <div className="card" style={{ marginBottom: 16, borderColor: 'var(--color-success)' }}>
                 <strong>Webhook created — copy this URL now, it won&apos;t be shown again:</strong>
                 <div style={{ fontFamily: 'monospace', fontSize: 12, marginTop: 6, wordBreak: 'break-all' }}>
                   {newToken.webhookUrl}

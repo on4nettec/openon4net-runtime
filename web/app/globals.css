@@ -1,40 +1,197 @@
+/* ---------------------------------------------------------------------
+ * Design tokens (RT-094) — three-layer structure: primitive → semantic → component.
+ * Single source of truth for every page; new pages should consume the
+ * semantic/component layer below, never raw hex values.
+ * ------------------------------------------------------------------- */
+:root {
+  /* Primitive — gray scale (dark, blue-tinted) */
+  --color-gray-950: #0a0c10;
+  --color-gray-900: #0f1115;
+  --color-gray-850: #14171d;
+  --color-gray-800: #171a20;
+  --color-gray-750: #1a1d24;
+  --color-gray-700: #21252c;
+  --color-gray-600: #2c3038;
+  --color-gray-500: #3a3f48;
+  --color-gray-400: #6b7280;
+  --color-gray-300: #9aa0aa;
+  --color-gray-100: #c7cbd1;
+  --color-gray-50: #e6e8eb;
+
+  /* Primitive — accent (blue) */
+  --color-blue-700: #2451ad;
+  --color-blue-600: #3b6fe0;
+  --color-blue-500: #5c8aec;
+  --color-blue-400: #82a5f0;
+  --color-blue-100: #1a2740;
+
+  /* Primitive — status */
+  --color-green-600: #3d9468;
+  --color-green-500: #4caf7d;
+  --color-green-100: #16281f;
+  --color-yellow-600: #c18f2c;
+  --color-yellow-500: #e0a83b;
+  --color-yellow-100: #2e2513;
+  --color-red-600: #d43e43;
+  --color-red-500: #f2555a;
+  --color-red-100: #301618;
+
+  /* Semantic — surfaces & text */
+  --color-background: var(--color-gray-900);
+  --color-foreground: var(--color-gray-50);
+  --color-surface: var(--color-gray-800);
+  --color-surface-raised: var(--color-gray-750);
+  --color-surface-foreground: var(--color-gray-50);
+  --color-border: var(--color-gray-600);
+  --color-border-subtle: var(--color-gray-700);
+  --color-muted-foreground: var(--color-gray-300);
+  --color-disabled-foreground: var(--color-gray-400);
+
+  /* Semantic — primary */
+  --color-primary: var(--color-blue-600);
+  --color-primary-hover: var(--color-blue-500);
+  --color-primary-active: var(--color-blue-700);
+  --color-primary-foreground: #ffffff;
+  --color-primary-subtle: var(--color-blue-100);
+
+  /* Semantic — status */
+  --color-success: var(--color-green-500);
+  --color-success-hover: var(--color-green-600);
+  --color-success-subtle: var(--color-green-100);
+  --color-warning: var(--color-yellow-500);
+  --color-warning-hover: var(--color-yellow-600);
+  --color-warning-subtle: var(--color-yellow-100);
+  --color-error: var(--color-red-500);
+  --color-error-hover: var(--color-red-600);
+  --color-error-subtle: var(--color-red-100);
+  --color-ring: var(--color-blue-500);
+
+  /* Typography */
+  --font-sans:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-size-2xs: 0.6875rem; /* 11px */
+  --font-size-xs: 0.75rem; /* 12px */
+  --font-size-sm: 0.8125rem; /* 13px */
+  --font-size-base: 0.875rem; /* 14px */
+  --font-size-md: 1rem; /* 16px */
+  --font-size-lg: 1.25rem; /* 20px */
+  --font-size-xl: 1.5rem; /* 24px */
+  --leading-tight: 1.25;
+  --leading-normal: 1.5;
+  --font-weight-normal: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+
+  /* Spacing (4px base unit) */
+  --space-1: 0.25rem; /* 4px */
+  --space-1-5: 0.375rem; /* 6px */
+  --space-2: 0.5rem; /* 8px */
+  --space-2-5: 0.625rem; /* 10px */
+  --space-3: 0.75rem; /* 12px */
+  --space-3-5: 0.875rem; /* 14px */
+  --space-4: 1rem; /* 16px */
+  --space-5: 1.25rem; /* 20px */
+  --space-6: 1.5rem; /* 24px */
+  --space-8: 2rem; /* 32px */
+  --space-10: 2.5rem; /* 40px */
+  --space-12: 3rem; /* 48px */
+
+  /* Radius */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 10px;
+  --radius-full: 9999px;
+
+  /* Shadow / elevation (subtle — dark theme) */
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.24);
+  --shadow-md: 0 4px 10px rgb(0 0 0 / 0.32);
+  --shadow-lg: 0 10px 24px rgb(0 0 0 / 0.4);
+
+  /* Motion */
+  --duration-fast: 120ms;
+  --duration-normal: 180ms;
+}
+
+/* ---------------------------------------------------------------------
+ * Base
+ * ------------------------------------------------------------------- */
 * {
   box-sizing: border-box;
 }
 
 body {
   margin: 0;
-  font-family:
-    -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  background: #0f1115;
-  color: #e6e8eb;
+  font-family: var(--font-sans);
+  font-size: var(--font-size-base);
+  line-height: var(--leading-normal);
+  background: var(--color-background);
+  color: var(--color-foreground);
 }
 
 a {
   color: inherit;
 }
 
+:focus-visible {
+  outline: 2px solid var(--color-ring);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+/* ---------------------------------------------------------------------
+ * Form elements
+ * ------------------------------------------------------------------- */
 input,
 textarea,
 select {
   font-family: inherit;
-  font-size: 14px;
-  background: #1a1d24;
-  border: 1px solid #2c3038;
-  border-radius: 6px;
-  color: #e6e8eb;
-  padding: 8px 10px;
+  font-size: var(--font-size-base);
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  color: var(--color-foreground);
+  padding: var(--space-2) var(--space-2-5);
+  transition: border-color var(--duration-fast) ease;
+}
+
+input:hover,
+textarea:hover,
+select:hover {
+  border-color: var(--color-gray-500);
+}
+
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  border-color: var(--color-primary);
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--color-muted-foreground);
 }
 
 button {
   font-family: inherit;
-  font-size: 14px;
-  background: #3b6fe0;
-  color: white;
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-medium);
+  background: var(--color-primary);
+  color: var(--color-primary-foreground);
   border: none;
-  border-radius: 6px;
-  padding: 8px 14px;
+  border-radius: var(--radius-md);
+  padding: var(--space-2) var(--space-3-5);
   cursor: pointer;
+  transition:
+    background-color var(--duration-fast) ease,
+    opacity var(--duration-fast) ease;
+}
+
+button:hover:not(:disabled) {
+  background: var(--color-primary-hover);
+}
+
+button:active:not(:disabled) {
+  background: var(--color-primary-active);
 }
 
 button:disabled {
@@ -43,50 +200,122 @@ button:disabled {
 }
 
 button.secondary {
-  background: #2c3038;
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border);
+  color: var(--color-foreground);
 }
 
+button.secondary:hover:not(:disabled) {
+  background: var(--color-gray-700);
+}
+
+button.danger {
+  background: var(--color-error);
+}
+
+button.danger:hover:not(:disabled) {
+  background: var(--color-error-hover);
+}
+
+/* ---------------------------------------------------------------------
+ * Layout & surfaces
+ * ------------------------------------------------------------------- */
 .page {
   max-width: 720px;
   margin: 0 auto;
-  padding: 32px 20px;
+  padding: var(--space-8) var(--space-5);
+}
+
+.page-wide {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: var(--space-8) var(--space-5);
 }
 
 .card {
-  background: #171a20;
-  border: 1px solid #2c3038;
-  border-radius: 10px;
-  padding: 20px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-5);
 }
 
 .field {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  margin-bottom: 14px;
+  gap: var(--space-1-5);
+  margin-bottom: var(--space-3-5);
 }
 
 .field label {
-  font-size: 13px;
-  color: #9aa0aa;
+  font-size: var(--font-size-sm);
+  color: var(--color-muted-foreground);
 }
 
 .error {
-  color: #f2555a;
-  font-size: 13px;
-  margin-bottom: 10px;
+  color: var(--color-error);
+  font-size: var(--font-size-sm);
+  margin-bottom: var(--space-2-5);
+}
+
+.muted {
+  color: var(--color-muted-foreground);
 }
 
 .topbar {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 14px 20px;
-  border-bottom: 1px solid #2c3038;
+  gap: var(--space-4);
+  padding: var(--space-3-5) var(--space-5);
+  border-bottom: 1px solid var(--color-border);
+  flex-wrap: wrap;
 }
 
 .topbar nav {
   display: flex;
-  gap: 16px;
-  font-size: 14px;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  font-size: var(--font-size-sm);
+}
+
+.topbar nav a {
+  white-space: nowrap;
+  transition: color var(--duration-fast) ease;
+}
+
+/* ---------------------------------------------------------------------
+ * Status badges — shared pill for approved/pending/error/etc. states
+ * ------------------------------------------------------------------- */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--font-size-2xs);
+  font-weight: var(--font-weight-semibold);
+  line-height: var(--leading-tight);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-full);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.badge-success {
+  background: var(--color-success-subtle);
+  color: var(--color-success);
+}
+
+.badge-warning {
+  background: var(--color-warning-subtle);
+  color: var(--color-warning);
+}
+
+.badge-error {
+  background: var(--color-error-subtle);
+  color: var(--color-error);
+}
+
+.badge-neutral {
+  background: var(--color-surface-raised);
+  color: var(--color-muted-foreground);
 }

@@ -2,15 +2,16 @@
 
 import { useEffect, useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
-import { api, loadSession, ApiError, downloadJson, type Skill, type SkillStep } from '@/lib/api-client';
+import { api, loadSession, ApiError, downloadJson, type Session, type Skill, type SkillStep } from '@/lib/api-client';
 import type { Agent } from '@o2n/shared';
+import { TopBar } from '@/components/TopBar';
 
 type ToolType = SkillStep['tool'];
 
 export default function SkillsPage() {
   const router = useRouter();
   const [ready, setReady] = useState(false);
+  const [session, setSession] = useState<Session | null>(null);
   const [skills, setSkills] = useState<Skill[]>([]);
   const [agents, setAgents] = useState<Agent[]>([]);
   const [selectedAgentId, setSelectedAgentId] = useState('');
@@ -49,11 +50,12 @@ export default function SkillsPage() {
   }
 
   useEffect(() => {
-    const session = loadSession();
-    if (!session) {
+    const s = loadSession();
+    if (!s) {
       router.push('/login');
       return;
     }
+    setSession(s);
     setReady(true);
     void loadSkills();
     api
@@ -177,26 +179,11 @@ export default function SkillsPage() {
 
   return (
     <div>
-      <div className="topbar">
-        <Link href="/agents">← Agents</Link>
-        <nav>
-          <Link href="/workspaces">Workspaces</Link>
-          <Link href="/users">Users</Link>
-          <Link href="/roles">Roles & Permissions</Link>
-          <Link href="/audit">Audit Log</Link>
-          <strong>Skills</strong>
-          <Link href="/skill-proposals">Skill Proposals</Link>
-          <Link href="/marketplace">Marketplace</Link>
-          <Link href="/approvals">Approvals</Link>
-          <Link href="/workflows">Workflows</Link>
-          <Link href="/policies">Policies</Link>
-          <Link href="/settings">Settings</Link>
-        </nav>
-      </div>
+      {session ? <TopBar session={session} /> : null}
 
       <div className="page">
-        <h1 style={{ fontSize: 20 }}>Skills</h1>
-        <p style={{ color: '#9aa0aa', fontSize: 14 }}>
+        <h1 style={{ fontSize: 'var(--font-size-xl)' }}>Skills</h1>
+        <p style={{ color: 'var(--color-muted-foreground)', fontSize: 14 }}>
           A Skill is a recorded sequence of tool steps an agent can replay on demand. Grants control which
           agents may use a given Skill.
         </p>
@@ -222,11 +209,11 @@ export default function SkillsPage() {
 
             <div className="card" style={{ marginBottom: 16 }}>
               {skills.length === 0 ? (
-                <p style={{ color: '#9aa0aa', margin: 0 }}>No skills yet — create one below.</p>
+                <p style={{ color: 'var(--color-muted-foreground)', margin: 0 }}>No skills yet — create one below.</p>
               ) : (
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
                   <thead>
-                    <tr style={{ textAlign: 'left', color: '#9aa0aa', fontSize: 12 }}>
+                    <tr style={{ textAlign: 'left', color: 'var(--color-muted-foreground)', fontSize: 12 }}>
                       <th style={{ paddingBottom: 8 }}>Name</th>
                       <th style={{ paddingBottom: 8 }}>Source</th>
                       <th style={{ paddingBottom: 8 }}>Executions</th>
@@ -239,9 +226,9 @@ export default function SkillsPage() {
                       const busy = busyId === skill.id;
                       const granted = grantedSkillIds.has(skill.id);
                       return (
-                        <tr key={skill.id} style={{ borderTop: '1px solid #2c3038' }}>
+                        <tr key={skill.id} style={{ borderTop: '1px solid var(--color-border)' }}>
                           <td style={{ padding: '8px 0' }}>{skill.name}</td>
-                          <td style={{ padding: '8px 0', color: '#9aa0aa' }}>{skill.source}</td>
+                          <td style={{ padding: '8px 0', color: 'var(--color-muted-foreground)' }}>{skill.source}</td>
                           <td style={{ padding: '8px 0' }}>{skill.executionCount}</td>
                           <td style={{ padding: '8px 0' }}>{skill.successRate}%</td>
                           <td style={{ padding: '8px 0', display: 'flex', gap: 8 }}>

@@ -2,13 +2,14 @@
 
 import { useEffect, useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
 import type { Workspace } from '@o2n/shared';
-import { api, loadSession, ApiError } from '@/lib/api-client';
+import { api, loadSession, ApiError, type Session } from '@/lib/api-client';
+import { TopBar } from '@/components/TopBar';
 
 export default function WorkspacesPage() {
   const router = useRouter();
   const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
+  const [session, setSession] = useState<Session | null>(null);
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [showArchived, setShowArchived] = useState(false);
@@ -64,12 +65,13 @@ export default function WorkspacesPage() {
   }
 
   useEffect(() => {
-    const session = loadSession();
-    if (!session) {
+    const s = loadSession();
+    if (!s) {
       router.push('/login');
       return;
     }
-    const admin = session.role === 'admin';
+    setSession(s);
+    const admin = s.role === 'admin';
     setIsAdmin(admin);
     if (admin) loadWorkspaces();
   }, [router]);
@@ -96,33 +98,18 @@ export default function WorkspacesPage() {
 
   return (
     <div>
-      <div className="topbar">
-        <Link href="/agents">← Agents</Link>
-        <nav>
-          <strong>Workspaces</strong>
-          <Link href="/users">Users</Link>
-          <Link href="/roles">Roles & Permissions</Link>
-          <Link href="/skills">Skills</Link>
-          <Link href="/skill-proposals">Skill Proposals</Link>
-          <Link href="/marketplace">Marketplace</Link>
-          <Link href="/approvals">Approvals</Link>
-          <Link href="/workflows">Workflows</Link>
-          <Link href="/policies">Policies</Link>
-          <Link href="/audit">Audit Log</Link>
-          <Link href="/settings">Settings</Link>
-        </nav>
-      </div>
+      {session ? <TopBar session={session} /> : null}
 
       <div className="page">
-        <h1 style={{ fontSize: 20 }}>Workspaces</h1>
-        <p style={{ color: '#9aa0aa', fontSize: 14 }}>
+        <h1 style={{ fontSize: 'var(--font-size-xl)' }}>Workspaces</h1>
+        <p style={{ color: 'var(--color-muted-foreground)', fontSize: 14 }}>
           Agents are created inside a workspace — pick which one when creating a new agent.
         </p>
 
         {error ? <div className="error">{error}</div> : null}
 
         {isAdmin === false ? (
-          <p style={{ color: '#9aa0aa' }}>Only organization admins can view or add workspaces.</p>
+          <p style={{ color: 'var(--color-muted-foreground)' }}>Only organization admins can view or add workspaces.</p>
         ) : isAdmin === null ? (
           <p>Loading…</p>
         ) : (
@@ -134,7 +121,7 @@ export default function WorkspacesPage() {
               </label>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
                 <thead>
-                  <tr style={{ textAlign: 'left', color: '#9aa0aa', fontSize: 12 }}>
+                  <tr style={{ textAlign: 'left', color: 'var(--color-muted-foreground)', fontSize: 12 }}>
                     <th style={{ paddingBottom: 8 }}>Name</th>
                     <th style={{ paddingBottom: 8 }}>Description</th>
                     <th style={{ paddingBottom: 8 }}>Status</th>
@@ -146,7 +133,7 @@ export default function WorkspacesPage() {
                     const busy = busyId === w.id;
                     const editing = editingId === w.id;
                     return (
-                      <tr key={w.id} style={{ borderTop: '1px solid #2c3038', opacity: w.status === 'archived' ? 0.6 : 1 }}>
+                      <tr key={w.id} style={{ borderTop: '1px solid var(--color-border)', opacity: w.status === 'archived' ? 0.6 : 1 }}>
                         {editing ? (
                           <>
                             <td style={{ padding: '8px 0' }}>
@@ -155,7 +142,7 @@ export default function WorkspacesPage() {
                             <td style={{ padding: '8px 0' }}>
                               <input value={editDescription} onChange={(e) => setEditDescription(e.target.value)} />
                             </td>
-                            <td style={{ padding: '8px 0', color: '#9aa0aa' }}>{w.status}</td>
+                            <td style={{ padding: '8px 0', color: 'var(--color-muted-foreground)' }}>{w.status}</td>
                             <td style={{ padding: '8px 0', display: 'flex', gap: 8 }}>
                               <button className="secondary" disabled={busy} onClick={() => handleSaveEdit(w.id)}>
                                 Save
@@ -168,8 +155,8 @@ export default function WorkspacesPage() {
                         ) : (
                           <>
                             <td style={{ padding: '8px 0' }}>{w.name}</td>
-                            <td style={{ padding: '8px 0', color: '#9aa0aa' }}>{w.description ?? '—'}</td>
-                            <td style={{ padding: '8px 0', color: '#9aa0aa' }}>{w.status}</td>
+                            <td style={{ padding: '8px 0', color: 'var(--color-muted-foreground)' }}>{w.description ?? '—'}</td>
+                            <td style={{ padding: '8px 0', color: 'var(--color-muted-foreground)' }}>{w.status}</td>
                             <td style={{ padding: '8px 0', display: 'flex', gap: 8 }}>
                               <button className="secondary" disabled={busy} onClick={() => startEdit(w)}>
                                 Edit

@@ -2,8 +2,8 @@
 
 import { useEffect, useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
-import { api, loadSession, ApiError } from '@/lib/api-client';
+import { api, loadSession, ApiError, type Session } from '@/lib/api-client';
+import { TopBar } from '@/components/TopBar';
 
 type ConditionType = 'cost_gt_cents' | 'outside_hours' | 'action_type_in';
 
@@ -31,6 +31,7 @@ function describeCondition(condition: Policy['condition']): string {
 export default function PoliciesPage() {
   const router = useRouter();
   const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
+  const [session, setSession] = useState<Session | null>(null);
   const [policies, setPolicies] = useState<Policy[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [togglingId, setTogglingId] = useState<string | null>(null);
@@ -52,12 +53,13 @@ export default function PoliciesPage() {
   }
 
   useEffect(() => {
-    const session = loadSession();
-    if (!session) {
+    const s = loadSession();
+    if (!s) {
       router.push('/login');
       return;
     }
-    const admin = session.role === 'admin';
+    setSession(s);
+    const admin = s.role === 'admin';
     setIsAdmin(admin);
     if (admin) loadPolicies();
   }, [router]);
@@ -118,26 +120,11 @@ export default function PoliciesPage() {
 
   return (
     <div>
-      <div className="topbar">
-        <Link href="/agents">← Agents</Link>
-        <nav>
-          <strong>Policies</strong>
-          <Link href="/workspaces">Workspaces</Link>
-          <Link href="/users">Users</Link>
-          <Link href="/roles">Roles & Permissions</Link>
-          <Link href="/skills">Skills</Link>
-          <Link href="/skill-proposals">Skill Proposals</Link>
-          <Link href="/marketplace">Marketplace</Link>
-          <Link href="/approvals">Approvals</Link>
-          <Link href="/workflows">Workflows</Link>
-          <Link href="/audit">Audit Log</Link>
-          <Link href="/settings">Settings</Link>
-        </nav>
-      </div>
+      {session ? <TopBar session={session} /> : null}
 
       <div className="page">
-        <h1 style={{ fontSize: 20 }}>Policies</h1>
-        <p style={{ color: '#9aa0aa', fontSize: 14 }}>
+        <h1 style={{ fontSize: 'var(--font-size-xl)' }}>Policies</h1>
+        <p style={{ color: 'var(--color-muted-foreground)', fontSize: 14 }}>
           When any active policy matches a chat request, it requires human approval — same queue as the
           org-wide cost threshold in Settings, just with more specific rules.
         </p>
@@ -145,18 +132,18 @@ export default function PoliciesPage() {
         {error ? <div className="error">{error}</div> : null}
 
         {isAdmin === false ? (
-          <p style={{ color: '#9aa0aa' }}>Only organization admins can view or manage policies.</p>
+          <p style={{ color: 'var(--color-muted-foreground)' }}>Only organization admins can view or manage policies.</p>
         ) : isAdmin === null ? (
           <p>Loading…</p>
         ) : (
           <>
             <div className="card" style={{ marginBottom: 16 }}>
               {policies.length === 0 ? (
-                <p style={{ color: '#9aa0aa', margin: 0 }}>No policies yet — every chat only goes through the org-wide cost threshold.</p>
+                <p style={{ color: 'var(--color-muted-foreground)', margin: 0 }}>No policies yet — every chat only goes through the org-wide cost threshold.</p>
               ) : (
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
                   <thead>
-                    <tr style={{ textAlign: 'left', color: '#9aa0aa', fontSize: 12 }}>
+                    <tr style={{ textAlign: 'left', color: 'var(--color-muted-foreground)', fontSize: 12 }}>
                       <th style={{ paddingBottom: 8 }}>Name</th>
                       <th style={{ paddingBottom: 8 }}>Condition</th>
                       <th style={{ paddingBottom: 8 }}>Status</th>
@@ -167,11 +154,11 @@ export default function PoliciesPage() {
                     {policies.map((p) => {
                       const busy = togglingId === p.id;
                       return (
-                        <tr key={p.id} style={{ borderTop: '1px solid #2c3038' }}>
+                        <tr key={p.id} style={{ borderTop: '1px solid var(--color-border)' }}>
                           <td style={{ padding: '8px 0' }}>{p.name}</td>
-                          <td style={{ padding: '8px 0', color: '#9aa0aa' }}>{describeCondition(p.condition)}</td>
+                          <td style={{ padding: '8px 0', color: 'var(--color-muted-foreground)' }}>{describeCondition(p.condition)}</td>
                           <td style={{ padding: '8px 0' }}>
-                            <span style={{ color: p.isActive ? '#4caf7d' : '#9aa0aa' }}>
+                            <span style={{ color: p.isActive ? 'var(--color-success)' : 'var(--color-muted-foreground)' }}>
                               {p.isActive ? 'Active' : 'Inactive'}
                             </span>
                           </td>
@@ -248,7 +235,7 @@ export default function PoliciesPage() {
                       onChange={(e) => setActionTypes(e.target.value)}
                       placeholder="tool-webhook-send, tool-telegram-send"
                     />
-                    <span style={{ display: 'block', color: '#9aa0aa', fontSize: 12, marginTop: 4 }}>
+                    <span style={{ display: 'block', color: 'var(--color-muted-foreground)', fontSize: 12, marginTop: 4 }}>
                       Applies to direct tool calls only, not Workflow steps.
                     </span>
                   </label>

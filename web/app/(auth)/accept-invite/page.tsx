@@ -32,7 +32,7 @@ function AcceptInviteForm() {
   return (
     <div className="page" style={{ maxWidth: 420, marginTop: 80 }}>
       <h1 style={{ fontSize: 22, marginBottom: 4 }}>Accept your invitation</h1>
-      <p style={{ color: '#9aa0aa', marginTop: 0, marginBottom: 24, fontSize: 14 }}>
+      <p style={{ color: 'var(--color-muted-foreground)', marginTop: 0, marginBottom: 24, fontSize: 14 }}>
         Choose your name and a password to finish joining.
       </p>
       {!token ? (

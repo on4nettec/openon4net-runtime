@@ -2,9 +2,9 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
 import type { ApprovalQueueEntry } from '@o2n/shared';
-import { api, loadSession, ApiError } from '@/lib/api-client';
+import { api, loadSession, ApiError, type Session } from '@/lib/api-client';
+import { TopBar } from '@/components/TopBar';
 
 function describeEntry(entry: ApprovalQueueEntry): string {
   const message = entry.actionData.message;
@@ -15,6 +15,7 @@ function describeEntry(entry: ApprovalQueueEntry): string {
 export default function ApprovalsPage() {
   const router = useRouter();
   const [ready, setReady] = useState(false);
+  const [session, setSession] = useState<Session | null>(null);
   const [entries, setEntries] = useState<ApprovalQueueEntry[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -27,11 +28,12 @@ export default function ApprovalsPage() {
   }
 
   useEffect(() => {
-    const session = loadSession();
-    if (!session) {
+    const s = loadSession();
+    if (!s) {
       router.push('/login');
       return;
     }
+    setSession(s);
     setReady(true);
     void loadEntries();
   }, [router]);
@@ -64,26 +66,11 @@ export default function ApprovalsPage() {
 
   return (
     <div>
-      <div className="topbar">
-        <Link href="/agents">← Agents</Link>
-        <nav>
-          <Link href="/workspaces">Workspaces</Link>
-          <Link href="/users">Users</Link>
-          <Link href="/roles">Roles & Permissions</Link>
-          <Link href="/audit">Audit Log</Link>
-          <Link href="/skills">Skills</Link>
-          <Link href="/skill-proposals">Skill Proposals</Link>
-          <strong>Approvals</strong>
-          <Link href="/marketplace">Marketplace</Link>
-          <Link href="/workflows">Workflows</Link>
-          <Link href="/policies">Policies</Link>
-          <Link href="/settings">Settings</Link>
-        </nav>
-      </div>
+      {session ? <TopBar session={session} /> : null}
 
       <div className="page">
-        <h1 style={{ fontSize: 20 }}>Approvals</h1>
-        <p style={{ color: '#9aa0aa', fontSize: 14 }}>
+        <h1 style={{ fontSize: 'var(--font-size-xl)' }}>Approvals</h1>
+        <p style={{ color: 'var(--color-muted-foreground)', fontSize: 14 }}>
           Requests held for human sign-off — usually because the estimated cost crossed a budget threshold or
           matched a policy. Unresolved requests expire automatically after 24 hours.
         </p>
@@ -95,11 +82,11 @@ export default function ApprovalsPage() {
         ) : (
           <div className="card">
             {entries.length === 0 ? (
-              <p style={{ color: '#9aa0aa', margin: 0 }}>No pending approvals.</p>
+              <p style={{ color: 'var(--color-muted-foreground)', margin: 0 }}>No pending approvals.</p>
             ) : (
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
                 <thead>
-                  <tr style={{ textAlign: 'left', color: '#9aa0aa', fontSize: 12 }}>
+                  <tr style={{ textAlign: 'left', color: 'var(--color-muted-foreground)', fontSize: 12 }}>
                     <th style={{ paddingBottom: 8 }}>Request</th>
                     <th style={{ paddingBottom: 8 }}>Reason</th>
                     <th style={{ paddingBottom: 8 }}>Expires</th>
@@ -110,10 +97,10 @@ export default function ApprovalsPage() {
                   {entries.map((entry) => {
                     const busy = busyId === entry.id;
                     return (
-                      <tr key={entry.id} style={{ borderTop: '1px solid #2c3038' }}>
+                      <tr key={entry.id} style={{ borderTop: '1px solid var(--color-border)' }}>
                         <td style={{ padding: '8px 0' }}>{describeEntry(entry)}</td>
-                        <td style={{ padding: '8px 0', color: '#9aa0aa' }}>{entry.reason ?? '—'}</td>
-                        <td style={{ padding: '8px 0', color: '#9aa0aa' }}>
+                        <td style={{ padding: '8px 0', color: 'var(--color-muted-foreground)' }}>{entry.reason ?? '—'}</td>
+                        <td style={{ padding: '8px 0', color: 'var(--color-muted-foreground)' }}>
                           {entry.expiresAt ? new Date(entry.expiresAt).toLocaleString() : '—'}
                         </td>
                         <td style={{ padding: '8px 0', display: 'flex', gap: 8 }}>

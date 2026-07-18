@@ -2,9 +2,9 @@
 
 import { useEffect, useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
-import { api, loadSession, ApiError } from '@/lib/api-client';
+import { api, loadSession, ApiError, type Session } from '@/lib/api-client';
 import type { Organization } from '@o2n/shared';
+import { TopBar } from '@/components/TopBar';
 
 interface Config {
   provider: string;
@@ -32,6 +32,7 @@ export default function SettingsPage() {
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<TestResult | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [session, setSession] = useState<Session | null>(null);
 
   const [organization, setOrganization] = useState<Organization | null>(null);
   const [orgError, setOrgError] = useState<string | null>(null);
@@ -132,12 +133,13 @@ export default function SettingsPage() {
   }
 
   useEffect(() => {
-    const session = loadSession();
-    if (!session) {
+    const s = loadSession();
+    if (!s) {
       router.push('/login');
       return;
     }
-    const admin = session.role === 'admin';
+    setSession(s);
+    const admin = s.role === 'admin';
     setIsAdmin(admin);
     loadConfig();
     if (admin) {
@@ -270,27 +272,12 @@ export default function SettingsPage() {
 
   return (
     <div>
-      <div className="topbar">
-        <Link href="/agents">← Agents</Link>
-        <nav>
-          <strong>Settings</strong>
-          <Link href="/audit">Audit Log</Link>
-          <Link href="/skills">Skills</Link>
-          <Link href="/skill-proposals">Skill Proposals</Link>
-          <Link href="/marketplace">Marketplace</Link>
-          <Link href="/approvals">Approvals</Link>
-          <Link href="/workflows">Workflows</Link>
-          {isAdmin ? <Link href="/workspaces">Workspaces</Link> : null}
-          {isAdmin ? <Link href="/users">Users</Link> : null}
-          {isAdmin ? <Link href="/roles">Roles & Permissions</Link> : null}
-          {isAdmin ? <Link href="/policies">Policies</Link> : null}
-        </nav>
-      </div>
+      {session ? <TopBar session={session} /> : null}
 
       <div className="page">
         {isAdmin ? (
           <>
-            <h1 style={{ fontSize: 20 }}>Organization</h1>
+            <h1 style={{ fontSize: 'var(--font-size-xl)' }}>Organization</h1>
             {orgError ? <div className="error">{orgError}</div> : null}
             {organization ? (
               <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 24 }}>
@@ -300,7 +287,7 @@ export default function SettingsPage() {
                 <Row label="Status" value={organization.status} />
                 <Row label="Default language" value={organization.language} />
 
-                <div style={{ borderTop: '1px solid #2c3038', paddingTop: 14, marginTop: 4 }}>
+                <div style={{ borderTop: '1px solid var(--color-border)', paddingTop: 14, marginTop: 4 }}>
                   <button type="button" onClick={() => setEditingOrg((v) => !v)}>
                     {editingOrg ? 'Cancel' : 'Edit name/language'}
                   </button>
@@ -309,7 +296,7 @@ export default function SettingsPage() {
                 {editingOrg ? (
                   <form
                     onSubmit={handleSaveOrg}
-                    style={{ borderTop: '1px solid #2c3038', paddingTop: 14, marginTop: 4, display: 'flex', flexDirection: 'column', gap: 10 }}
+                    style={{ borderTop: '1px solid var(--color-border)', paddingTop: 14, marginTop: 4, display: 'flex', flexDirection: 'column', gap: 10 }}
                   >
                     {orgSaveError ? <div className="error">{orgSaveError}</div> : null}
                     <label>
@@ -337,7 +324,7 @@ export default function SettingsPage() {
             ) : null}
 
             <h2 style={{ fontSize: 16, marginTop: 24 }}>Governance</h2>
-            <p style={{ color: '#9aa0aa', fontSize: 13, marginTop: 0 }}>
+            <p style={{ color: 'var(--color-muted-foreground)', fontSize: 13, marginTop: 0 }}>
               Blank means never auto-delete (or fall back to the Runtime-wide <code>AUDIT_RETENTION_DAYS</code>{' '}
               default, if set). Swept once a day.
             </p>
@@ -360,12 +347,12 @@ export default function SettingsPage() {
                 <button type="submit" disabled={savingRetention}>
                   {savingRetention ? 'Saving…' : 'Save'}
                 </button>
-                {retentionSaved ? <span style={{ color: '#4caf7d', fontSize: 13 }}>✓ Saved</span> : null}
+                {retentionSaved ? <span style={{ color: 'var(--color-success)', fontSize: 13 }}>✓ Saved</span> : null}
               </form>
             </div>
 
             <h2 style={{ fontSize: 16, marginTop: 24 }}>Wallet</h2>
-            <p style={{ color: '#9aa0aa', fontSize: 13, marginTop: 0 }}>
+            <p style={{ color: 'var(--color-muted-foreground)', fontSize: 13, marginTop: 0 }}>
               Optional org-level spending cap. Uninitialized (never topped up) means no cap — chats are only
               gated by each agent&apos;s own monthly budget.
             </p>
@@ -378,7 +365,7 @@ export default function SettingsPage() {
                 />
                 <form
                   onSubmit={handleTopUp}
-                  style={{ borderTop: '1px solid #2c3038', paddingTop: 14, marginTop: 4, display: 'flex', gap: 10, alignItems: 'flex-end' }}
+                  style={{ borderTop: '1px solid var(--color-border)', paddingTop: 14, marginTop: 4, display: 'flex', gap: 10, alignItems: 'flex-end' }}
                 >
                   {topUpError ? <div className="error">{topUpError}</div> : null}
                   <label style={{ flex: 1 }}>
@@ -400,7 +387,7 @@ export default function SettingsPage() {
             ) : null}
 
             <h2 style={{ fontSize: 16, marginTop: 24 }}>Single Sign-On</h2>
-            <p style={{ color: '#9aa0aa', fontSize: 13, marginTop: 0 }}>
+            <p style={{ color: 'var(--color-muted-foreground)', fontSize: 13, marginTop: 0 }}>
               Enterprise SSO — this organization&apos;s own identity provider (OIDC or SAML). Users must already
               have an account (SSO doesn&apos;t auto-create one) — it just replaces password/magic-link for signing
               in to an existing account.
@@ -423,7 +410,7 @@ export default function SettingsPage() {
                         <Row label="SSO URL" value={ssoConfig.config.ssoUrl ?? ''} />
                       </>
                     )}
-                    <div style={{ borderTop: '1px solid #2c3038', paddingTop: 14, marginTop: 4, display: 'flex', gap: 10 }}>
+                    <div style={{ borderTop: '1px solid var(--color-border)', paddingTop: 14, marginTop: 4, display: 'flex', gap: 10 }}>
                       <button type="button" onClick={() => setEditingSso((v) => !v)}>
                         {editingSso ? 'Cancel' : 'Edit'}
                       </button>
@@ -433,13 +420,13 @@ export default function SettingsPage() {
                     </div>
                   </>
                 ) : (
-                  <p style={{ color: '#9aa0aa', margin: 0 }}>No SSO provider configured yet.</p>
+                  <p style={{ color: 'var(--color-muted-foreground)', margin: 0 }}>No SSO provider configured yet.</p>
                 )}
 
                 {!ssoConfig || editingSso ? (
                   <form
                     onSubmit={handleSaveSso}
-                    style={{ borderTop: ssoConfig ? '1px solid #2c3038' : 'none', paddingTop: ssoConfig ? 14 : 0, marginTop: 4, display: 'flex', flexDirection: 'column', gap: 10 }}
+                    style={{ borderTop: ssoConfig ? '1px solid var(--color-border)' : 'none', paddingTop: ssoConfig ? 14 : 0, marginTop: 4, display: 'flex', flexDirection: 'column', gap: 10 }}
                   >
                     {ssoSaveError ? <div className="error">{ssoSaveError}</div> : null}
                     <label>
@@ -512,8 +499,8 @@ export default function SettingsPage() {
           </>
         ) : null}
 
-        <h1 style={{ fontSize: 20 }}>AI Provider</h1>
-        <p style={{ color: '#9aa0aa', fontSize: 14 }}>
+        <h1 style={{ fontSize: 'var(--font-size-xl)' }}>AI Provider</h1>
+        <p style={{ color: 'var(--color-muted-foreground)', fontSize: 14 }}>
           {config?.source === 'database'
             ? 'This organization has its own provider override, stored encrypted in the database.'
             : "Using the runtime's env-configured default provider — no per-organization override set yet."}
@@ -531,7 +518,7 @@ export default function SettingsPage() {
             <Row label="Approval threshold" value={`${config.approvalThresholdCents} cents`} />
             <Row label="Rate limit" value={`${config.rateLimitPerMinute} req/min per agent`} />
 
-            <div style={{ borderTop: '1px solid #2c3038', paddingTop: 14, marginTop: 4, display: 'flex', gap: 10 }}>
+            <div style={{ borderTop: '1px solid var(--color-border)', paddingTop: 14, marginTop: 4, display: 'flex', gap: 10 }}>
               <button onClick={handleTestConnection} disabled={testing}>
                 {testing ? 'Testing…' : 'Test connection'}
               </button>
@@ -544,11 +531,11 @@ export default function SettingsPage() {
             {testResult ? (
               <div style={{ marginTop: 2, fontSize: 13 }}>
                 {testResult.success ? (
-                  <span style={{ color: '#4caf7d' }}>
+                  <span style={{ color: 'var(--color-success)' }}>
                     ✓ Connected — {testResult.model} responded in {testResult.responseTimeMs}ms
                   </span>
                 ) : (
-                  <span style={{ color: '#f2555a' }}>
+                  <span style={{ color: 'var(--color-error)' }}>
                     ✗ Failed ({testResult.responseTimeMs}ms): {testResult.error}
                   </span>
                 )}
@@ -558,7 +545,7 @@ export default function SettingsPage() {
             {isAdmin && editing ? (
               <form
                 onSubmit={handleSave}
-                style={{ borderTop: '1px solid #2c3038', paddingTop: 14, marginTop: 4, display: 'flex', flexDirection: 'column', gap: 10 }}
+                style={{ borderTop: '1px solid var(--color-border)', paddingTop: 14, marginTop: 4, display: 'flex', flexDirection: 'column', gap: 10 }}
               >
                 {saveError ? <div className="error">{saveError}</div> : null}
                 <label>
@@ -606,7 +593,7 @@ export default function SettingsPage() {
 function Row({ label, value }: { label: string; value: string }) {
   return (
     <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-      <span style={{ color: '#9aa0aa' }}>{label}</span>
+      <span style={{ color: 'var(--color-muted-foreground)' }}>{label}</span>
       <span>{value}</span>
     </div>
   );

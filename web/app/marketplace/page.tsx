@@ -9,11 +9,14 @@ import {
   ApiError,
   type MarketplacePlugin,
   type MarketplaceSkillListing,
+  type Session,
 } from '@/lib/api-client';
+import { TopBar } from '@/components/TopBar';
 
 export default function MarketplacePage() {
   const router = useRouter();
   const [ready, setReady] = useState(false);
+  const [session, setSession] = useState<Session | null>(null);
   const [plugins, setPlugins] = useState<MarketplacePlugin[]>([]);
   const [skills, setSkills] = useState<MarketplaceSkillListing[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -41,11 +44,12 @@ export default function MarketplacePage() {
   }
 
   useEffect(() => {
-    const session = loadSession();
-    if (!session) {
+    const s = loadSession();
+    if (!s) {
       router.push('/login');
       return;
     }
+    setSession(s);
     setReady(true);
     void loadMarketplace();
   }, [router]);
@@ -134,25 +138,11 @@ export default function MarketplacePage() {
 
   return (
     <div>
-      <div className="topbar">
-        <Link href="/agents">← Agents</Link>
-        <nav>
-          <Link href="/workspaces">Workspaces</Link>
-          <Link href="/users">Users</Link>
-          <Link href="/roles">Roles & Permissions</Link>
-          <Link href="/audit">Audit Log</Link>
-          <Link href="/skills">Skills</Link>
-          <Link href="/skill-proposals">Skill Proposals</Link>
-          <strong>Marketplace</strong>
-          <Link href="/workflows">Workflows</Link>
-          <Link href="/policies">Policies</Link>
-          <Link href="/settings">Settings</Link>
-        </nav>
-      </div>
+      {session ? <TopBar session={session} /> : null}
 
       <div className="page">
-        <h1 style={{ fontSize: 20 }}>Marketplace</h1>
-        <p style={{ color: '#9aa0aa', fontSize: 14 }}>
+        <h1 style={{ fontSize: 'var(--font-size-xl)' }}>Marketplace</h1>
+        <p style={{ color: 'var(--color-muted-foreground)', fontSize: 14 }}>
           Browse Skills and Plugins published by the community. Installing requires an activated Runtime.{' '}
           <Link href="/marketplace/publisher">Publish your own →</Link>
         </p>
@@ -166,11 +156,11 @@ export default function MarketplacePage() {
             <div className="card" style={{ marginBottom: 16 }}>
               <h2 style={{ fontSize: 16, marginTop: 0 }}>Skills</h2>
               {skills.length === 0 ? (
-                <p style={{ color: '#9aa0aa', margin: 0 }}>No skills listed yet.</p>
+                <p style={{ color: 'var(--color-muted-foreground)', margin: 0 }}>No skills listed yet.</p>
               ) : (
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
                   <thead>
-                    <tr style={{ textAlign: 'left', color: '#9aa0aa', fontSize: 12 }}>
+                    <tr style={{ textAlign: 'left', color: 'var(--color-muted-foreground)', fontSize: 12 }}>
                       <th style={{ paddingBottom: 8 }}>Name</th>
                       <th style={{ paddingBottom: 8 }}>Publisher</th>
                       <th style={{ paddingBottom: 8 }}>Price</th>
@@ -183,19 +173,19 @@ export default function MarketplacePage() {
                     {skills.map((skill) => {
                       const skillInstalled = installedSkillIds.has(skill.skillId);
                       return (
-                        <tr key={skill.skillId} style={{ borderTop: '1px solid #2c3038' }}>
+                        <tr key={skill.skillId} style={{ borderTop: '1px solid var(--color-border)' }}>
                           <td style={{ padding: '8px 0' }}>
                             {skill.name}
                             {skill.description ? (
-                              <div style={{ color: '#9aa0aa', fontSize: 12 }}>{skill.description}</div>
+                              <div style={{ color: 'var(--color-muted-foreground)', fontSize: 12 }}>{skill.description}</div>
                             ) : null}
                           </td>
-                          <td style={{ padding: '8px 0', color: '#9aa0aa' }}>{skill.publisherSlug}</td>
+                          <td style={{ padding: '8px 0', color: 'var(--color-muted-foreground)' }}>{skill.publisherSlug}</td>
                           <td style={{ padding: '8px 0' }}>
                             {skill.priceCents === 0 ? 'Free' : `$${(skill.priceCents / 100).toFixed(2)}`}
                           </td>
-                          <td style={{ padding: '8px 0', color: '#9aa0aa' }}>{skill.installCount}</td>
-                          <td style={{ padding: '8px 0', color: '#9aa0aa' }}>
+                          <td style={{ padding: '8px 0', color: 'var(--color-muted-foreground)' }}>{skill.installCount}</td>
+                          <td style={{ padding: '8px 0', color: 'var(--color-muted-foreground)' }}>
                             {formatRating(skill.avgRating, skill.ratingCount)}
                           </td>
                           <td style={{ padding: '8px 0' }}>
@@ -218,7 +208,7 @@ export default function MarketplacePage() {
                                   Submit
                                 </button>
                                 {ratingStatus[skill.skillId] ? (
-                                  <span style={{ fontSize: 12, color: '#9aa0aa' }}>{ratingStatus[skill.skillId]}</span>
+                                  <span style={{ fontSize: 12, color: 'var(--color-muted-foreground)' }}>{ratingStatus[skill.skillId]}</span>
                                 ) : null}
                               </div>
                             ) : (
@@ -242,30 +232,30 @@ export default function MarketplacePage() {
             <div className="card">
               <h2 style={{ fontSize: 16, marginTop: 0 }}>Plugins</h2>
               {plugins.length === 0 ? (
-                <p style={{ color: '#9aa0aa', margin: 0 }}>No plugins listed yet.</p>
+                <p style={{ color: 'var(--color-muted-foreground)', margin: 0 }}>No plugins listed yet.</p>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                   {plugins.map((plugin) => {
                     const installed = installedPluginIds.has(plugin.pluginId);
                     const configSchema = plugin.manifest?.configSchema ?? [];
                     return (
-                      <div key={plugin.pluginId} style={{ borderTop: '1px solid #2c3038', paddingTop: 12 }}>
+                      <div key={plugin.pluginId} style={{ borderTop: '1px solid var(--color-border)', paddingTop: 12 }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                           <div>
                             <strong>{plugin.name}</strong>{' '}
-                            <span style={{ color: '#9aa0aa', fontSize: 12 }}>
+                            <span style={{ color: 'var(--color-muted-foreground)', fontSize: 12 }}>
                               {plugin.publisherSlug}
                               {plugin.publisherVerified ? ' ✓' : ''} · {plugin.latestVersion ?? 'unversioned'}
                             </span>
                             {plugin.description ? (
-                              <div style={{ color: '#9aa0aa', fontSize: 12 }}>{plugin.description}</div>
+                              <div style={{ color: 'var(--color-muted-foreground)', fontSize: 12 }}>{plugin.description}</div>
                             ) : null}
                             {plugin.permissions.length > 0 ? (
-                              <div style={{ color: '#9aa0aa', fontSize: 12 }}>
+                              <div style={{ color: 'var(--color-muted-foreground)', fontSize: 12 }}>
                                 Wants access to: {plugin.permissions.join(', ')}
                               </div>
                             ) : null}
-                            <div style={{ color: '#9aa0aa', fontSize: 12 }}>
+                            <div style={{ color: 'var(--color-muted-foreground)', fontSize: 12 }}>
                               {plugin.priceCredits ? `${plugin.priceCredits} credits` : 'Free'} · {plugin.installCount}{' '}
                               installs · {formatRating(plugin.avgRating, plugin.ratingCount)}
                             </div>
@@ -298,7 +288,7 @@ export default function MarketplacePage() {
                               Submit
                             </button>
                             {ratingStatus[plugin.pluginId] ? (
-                              <span style={{ fontSize: 12, color: '#9aa0aa' }}>{ratingStatus[plugin.pluginId]}</span>
+                              <span style={{ fontSize: 12, color: 'var(--color-muted-foreground)' }}>{ratingStatus[plugin.pluginId]}</span>
                             ) : null}
                           </div>
                         ) : null}
@@ -322,7 +312,7 @@ export default function MarketplacePage() {
                                 Save settings
                               </button>
                               {configStatus[plugin.pluginId] ? (
-                                <span style={{ fontSize: 12, color: '#9aa0aa' }}>{configStatus[plugin.pluginId]}</span>
+                                <span style={{ fontSize: 12, color: 'var(--color-muted-foreground)' }}>{configStatus[plugin.pluginId]}</span>
                               ) : null}
                             </div>
                           </div>

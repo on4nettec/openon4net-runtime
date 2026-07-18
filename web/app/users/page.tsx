@@ -4,7 +4,8 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import type { User, Workspace } from '@o2n/shared';
-import { api, loadSession, ApiError, type Invitation } from '@/lib/api-client';
+import { api, loadSession, ApiError, type Invitation, type Session } from '@/lib/api-client';
+import { TopBar } from '@/components/TopBar';
 
 interface RoleOption {
   id: string;
@@ -15,6 +16,7 @@ interface RoleOption {
 export default function UsersPage() {
   const router = useRouter();
   const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
+  const [session, setSession] = useState<Session | null>(null);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [users, setUsers] = useState<User[]>([]);
   const [roles, setRoles] = useState<RoleOption[]>([]);
@@ -52,14 +54,15 @@ export default function UsersPage() {
   }
 
   useEffect(() => {
-    const session = loadSession();
-    if (!session) {
+    const s = loadSession();
+    if (!s) {
       router.push('/login');
       return;
     }
-    const admin = session.role === 'admin';
+    setSession(s);
+    const admin = s.role === 'admin';
     setIsAdmin(admin);
-    setCurrentUserId(session.userId);
+    setCurrentUserId(s.userId);
     if (admin) {
       loadUsers();
       loadInvitations();
@@ -160,26 +163,11 @@ export default function UsersPage() {
 
   return (
     <div>
-      <div className="topbar">
-        <Link href="/agents">← Agents</Link>
-        <nav>
-          <strong>Users</strong>
-          <Link href="/workspaces">Workspaces</Link>
-          <Link href="/roles">Roles & Permissions</Link>
-          <Link href="/skills">Skills</Link>
-          <Link href="/skill-proposals">Skill Proposals</Link>
-          <Link href="/marketplace">Marketplace</Link>
-          <Link href="/approvals">Approvals</Link>
-          <Link href="/workflows">Workflows</Link>
-          <Link href="/policies">Policies</Link>
-          <Link href="/audit">Audit Log</Link>
-          <Link href="/settings">Settings</Link>
-        </nav>
-      </div>
+      {session ? <TopBar session={session} /> : null}
 
       <div className="page">
-        <h1 style={{ fontSize: 20 }}>Users</h1>
-        <p style={{ color: '#9aa0aa', fontSize: 14 }}>
+        <h1 style={{ fontSize: 'var(--font-size-xl)' }}>Users</h1>
+        <p style={{ color: 'var(--color-muted-foreground)', fontSize: 14 }}>
           Everyone signs in with the same dev API key — a user&apos;s email just picks which identity (and role)
           they sign in as. See <Link href="/roles">Roles & Permissions</Link> to change what a role can do.
         </p>
@@ -187,7 +175,7 @@ export default function UsersPage() {
         {error ? <div className="error">{error}</div> : null}
 
         {isAdmin === false ? (
-          <p style={{ color: '#9aa0aa' }}>Only organization admins can view or add users.</p>
+          <p style={{ color: 'var(--color-muted-foreground)' }}>Only organization admins can view or add users.</p>
         ) : isAdmin === null ? (
           <p>Loading…</p>
         ) : (
@@ -195,7 +183,7 @@ export default function UsersPage() {
             <div className="card" style={{ marginBottom: 16 }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
                 <thead>
-                  <tr style={{ textAlign: 'left', color: '#9aa0aa', fontSize: 12 }}>
+                  <tr style={{ textAlign: 'left', color: 'var(--color-muted-foreground)', fontSize: 12 }}>
                     <th style={{ paddingBottom: 8 }}>Email</th>
                     <th style={{ paddingBottom: 8 }}>Name</th>
                     <th style={{ paddingBottom: 8 }}>Role</th>
@@ -208,10 +196,10 @@ export default function UsersPage() {
                     const isSelf = u.id === currentUserId;
                     const busy = updatingId === u.id;
                     return (
-                      <tr key={u.id} style={{ borderTop: '1px solid #2c3038' }}>
+                      <tr key={u.id} style={{ borderTop: '1px solid var(--color-border)' }}>
                         <td style={{ padding: '8px 0' }}>
                           {u.email}
-                          {isSelf ? <span style={{ color: '#9aa0aa' }}> (you)</span> : null}
+                          {isSelf ? <span style={{ color: 'var(--color-muted-foreground)' }}> (you)</span> : null}
                         </td>
                         <td style={{ padding: '8px 0' }}>{u.name}</td>
                         <td style={{ padding: '8px 0' }}>
@@ -232,7 +220,7 @@ export default function UsersPage() {
                           )}
                         </td>
                         <td style={{ padding: '8px 0' }}>
-                          <span style={{ color: u.isActive ? '#4caf7d' : '#f2555a' }}>
+                          <span style={{ color: u.isActive ? 'var(--color-success)' : 'var(--color-error)' }}>
                             {u.isActive ? 'Active' : 'Deactivated'}
                           </span>
                         </td>
@@ -293,14 +281,14 @@ export default function UsersPage() {
 
             <div className="card" style={{ marginTop: 16 }}>
               <h2 style={{ fontSize: 16, marginTop: 0 }}>Invite by email</h2>
-              <p style={{ color: '#9aa0aa', fontSize: 13, marginTop: 0 }}>
+              <p style={{ color: 'var(--color-muted-foreground)', fontSize: 13, marginTop: 0 }}>
                 Sends an email with a link the invitee uses to set their own name and password.
               </p>
 
               {invitations.length > 0 ? (
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14, marginBottom: 16 }}>
                   <thead>
-                    <tr style={{ textAlign: 'left', color: '#9aa0aa', fontSize: 12 }}>
+                    <tr style={{ textAlign: 'left', color: 'var(--color-muted-foreground)', fontSize: 12 }}>
                       <th style={{ paddingBottom: 8 }}>Email</th>
                       <th style={{ paddingBottom: 8 }}>Role</th>
                       <th style={{ paddingBottom: 8 }}>Expires</th>
@@ -309,10 +297,10 @@ export default function UsersPage() {
                   </thead>
                   <tbody>
                     {invitations.map((inv) => (
-                      <tr key={inv.id} style={{ borderTop: '1px solid #2c3038' }}>
+                      <tr key={inv.id} style={{ borderTop: '1px solid var(--color-border)' }}>
                         <td style={{ padding: '8px 0' }}>{inv.email}</td>
-                        <td style={{ padding: '8px 0', color: '#9aa0aa' }}>{inv.role}</td>
-                        <td style={{ padding: '8px 0', color: '#9aa0aa' }}>{new Date(inv.expiresAt).toLocaleDateString()}</td>
+                        <td style={{ padding: '8px 0', color: 'var(--color-muted-foreground)' }}>{inv.role}</td>
+                        <td style={{ padding: '8px 0', color: 'var(--color-muted-foreground)' }}>{new Date(inv.expiresAt).toLocaleDateString()}</td>
                         <td style={{ padding: '8px 0' }}>
                           <button
                             className="secondary"

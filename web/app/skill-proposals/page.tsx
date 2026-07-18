@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
-import { api, loadSession, ApiError, type SkillProposal } from '@/lib/api-client';
+import { api, loadSession, ApiError, type Session, type SkillProposal } from '@/lib/api-client';
+import { TopBar } from '@/components/TopBar';
 
 function describeStep(proposal: SkillProposal): string {
   const step = proposal.proposedDefinition.steps[0];
@@ -15,6 +15,7 @@ function describeStep(proposal: SkillProposal): string {
 export default function SkillProposalsPage() {
   const router = useRouter();
   const [ready, setReady] = useState(false);
+  const [session, setSession] = useState<Session | null>(null);
   const [proposals, setProposals] = useState<SkillProposal[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -27,11 +28,12 @@ export default function SkillProposalsPage() {
   }
 
   useEffect(() => {
-    const session = loadSession();
-    if (!session) {
+    const s = loadSession();
+    if (!s) {
       router.push('/login');
       return;
     }
+    setSession(s);
     setReady(true);
     void loadProposals();
   }, [router]);
@@ -64,26 +66,11 @@ export default function SkillProposalsPage() {
 
   return (
     <div>
-      <div className="topbar">
-        <Link href="/agents">← Agents</Link>
-        <nav>
-          <Link href="/workspaces">Workspaces</Link>
-          <Link href="/users">Users</Link>
-          <Link href="/roles">Roles & Permissions</Link>
-          <Link href="/audit">Audit Log</Link>
-          <Link href="/skills">Skills</Link>
-          <strong>Skill Proposals</strong>
-          <Link href="/marketplace">Marketplace</Link>
-          <Link href="/approvals">Approvals</Link>
-          <Link href="/workflows">Workflows</Link>
-          <Link href="/policies">Policies</Link>
-          <Link href="/settings">Settings</Link>
-        </nav>
-      </div>
+      {session ? <TopBar session={session} /> : null}
 
       <div className="page">
-        <h1 style={{ fontSize: 20 }}>Skill Proposals</h1>
-        <p style={{ color: '#9aa0aa', fontSize: 14 }}>
+        <h1 style={{ fontSize: 'var(--font-size-xl)' }}>Skill Proposals</h1>
+        <p style={{ color: 'var(--color-muted-foreground)', fontSize: 14 }}>
           Auto-detected from repeated agent activity (frequency + similarity of recent actions). Approving
           creates a real Skill; rejecting discards the proposal. Neither happens automatically — a human
           always decides.
@@ -96,11 +83,11 @@ export default function SkillProposalsPage() {
         ) : (
           <div className="card">
             {proposals.length === 0 ? (
-              <p style={{ color: '#9aa0aa', margin: 0 }}>No pending proposals.</p>
+              <p style={{ color: 'var(--color-muted-foreground)', margin: 0 }}>No pending proposals.</p>
             ) : (
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
                 <thead>
-                  <tr style={{ textAlign: 'left', color: '#9aa0aa', fontSize: 12 }}>
+                  <tr style={{ textAlign: 'left', color: 'var(--color-muted-foreground)', fontSize: 12 }}>
                     <th style={{ paddingBottom: 8 }}>Pattern</th>
                     <th style={{ paddingBottom: 8 }}>Occurrences</th>
                     <th style={{ paddingBottom: 8 }}></th>
@@ -110,9 +97,9 @@ export default function SkillProposalsPage() {
                   {proposals.map((proposal) => {
                     const busy = busyId === proposal.id;
                     return (
-                      <tr key={proposal.id} style={{ borderTop: '1px solid #2c3038' }}>
+                      <tr key={proposal.id} style={{ borderTop: '1px solid var(--color-border)' }}>
                         <td style={{ padding: '8px 0' }}>{describeStep(proposal)}</td>
-                        <td style={{ padding: '8px 0', color: '#9aa0aa' }}>
+                        <td style={{ padding: '8px 0', color: 'var(--color-muted-foreground)' }}>
                           {String(proposal.patternMetadata.occurrences ?? '?')} in{' '}
                           {String(proposal.patternMetadata.windowDays ?? '?')} days
                         </td>
