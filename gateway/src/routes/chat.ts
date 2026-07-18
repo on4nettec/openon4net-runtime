@@ -48,63 +48,75 @@ export function registerChatRoutes(app: FastifyInstance, ctx: AppContext): void 
     },
   );
 
-  app.post<{ Params: { id: string } }>(
-    '/v1/agents/:id/chat/stream',
-    { preHandler: checkRateLimit },
-    async (request: FastifyRequest<{ Params: { id: string } }>, reply) => {
-      requirePermission(request, 'agents:chat');
-      const parsed = ChatRequestSchema.safeParse(request.body);
-      if (!parsed.success) throw new ValidationError('Invalid chat payload', parsed.error.flatten());
+  /**
+   * RT-090: replaces the old POST /chat/stream SSE endpoint. A WebSocket
+   * handshake is always a GET, and the browser's native WebSocket
+   * constructor can't set an Authorization header — the token/org id ride
+   * along as query params instead (see plugins/auth.ts's isWsUpgrade
+   * branch), scoped there to upgrade requests only so a normal REST call
+   * can't use the same shortcut.
+   *
+   * The connection stays open for the agent's whole chat session: the
+   * client sends one `{ message, conversationId? }` JSON frame per turn and
+   * gets back a run of `ChatStreamEvent`-shaped frames ending in `done` (or
+   * `requires_approval`/`error`). `busy` rejects a second turn sent before
+   * the first has finished, since interleaving two chatStream() generators
+   * on one socket would interleave their tokens in the output.
+   */
+  app.get<{ Params: { id: string } }>(
+    '/v1/agents/:id/chat/ws',
+    {
+      websocket: true,
+      // requirePermission() is synchronous and void — as a bare (non-async)
+      // preHandler, Fastify's hook runner gets neither a resolved promise
+      // nor a called `done()` callback and hangs the connection forever.
+      // Wrapping it in an async function gives it a real promise to await.
+      preHandler: [checkRateLimit, async (request: FastifyRequest) => requirePermission(request, 'agents:chat')],
+    },
+    (socket, request: FastifyRequest<{ Params: { id: string } }>) => {
+      let busy = false;
 
-      // Writing to reply.raw bypasses Fastify's reply pipeline entirely, so
-      // @fastify/cors's onSend hook (registered in app.ts) never runs for
-      // this response — its CORS header has to be set by hand here, or
-      // browsers block reading the stream even though the OPTIONS preflight
-      // (which @fastify/cors does intercept) succeeds.
-      const origin = request.headers.origin;
-      reply.raw.writeHead(200, {
-        'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache',
-        Connection: 'keep-alive',
-        ...(origin ? { 'Access-Control-Allow-Origin': origin, Vary: 'Origin' } : {}),
-      });
-
-      try {
-        for await (const event of chatService.chatStream({
-          organizationId: request.auth.organizationId,
-          userId: request.auth.userId,
-          agentId: request.params.id,
-          message: parsed.data.message,
-          conversationId: parsed.data.conversationId,
-          traceId: request.traceId,
-        })) {
-          if (event.type === 'token') {
-            reply.raw.write(`event: token\ndata: ${JSON.stringify({ delta: event.delta })}\n\n`);
-          } else if (event.type === 'reasoning') {
-            reply.raw.write(`event: reasoning\ndata: ${JSON.stringify({ delta: event.delta })}\n\n`);
-          } else if (event.type === 'requires_approval') {
-            reply.raw.write(
-              `event: requires-approval\ndata: ${JSON.stringify({ approvalId: event.approvalId })}\n\n`,
-            );
-          } else {
-            reply.raw.write(
-              `event: done\ndata: ${JSON.stringify({
-                conversationId: event.conversationId,
-                model: event.model,
-                costCents: event.costCents,
-                traceId: event.traceId,
-                timeMs: event.timeMs,
-              })}\n\n`,
-            );
-          }
+      socket.on('message', (raw: Buffer) => {
+        if (busy) {
+          socket.send(JSON.stringify({ type: 'error', message: 'A message is already in progress on this connection' }));
+          return;
         }
-      } catch (err) {
-        // Headers are already flushed for SSE, so an HTTP error status is no
-        // longer possible — surface the failure as an SSE event instead.
-        const message = err instanceof Error ? err.message : 'Unknown error';
-        reply.raw.write(`event: error\ndata: ${JSON.stringify({ message, traceId: request.traceId })}\n\n`);
-      }
-      reply.raw.end();
+
+        let body: unknown;
+        try {
+          body = JSON.parse(raw.toString());
+        } catch {
+          socket.send(JSON.stringify({ type: 'error', message: 'Invalid JSON payload' }));
+          return;
+        }
+
+        const parsed = ChatRequestSchema.safeParse(body);
+        if (!parsed.success) {
+          socket.send(JSON.stringify({ type: 'error', message: 'Invalid chat payload' }));
+          return;
+        }
+
+        busy = true;
+        void (async () => {
+          try {
+            for await (const event of chatService.chatStream({
+              organizationId: request.auth.organizationId,
+              userId: request.auth.userId,
+              agentId: request.params.id,
+              message: parsed.data.message,
+              conversationId: parsed.data.conversationId,
+              traceId: request.traceId,
+            })) {
+              socket.send(JSON.stringify(event));
+            }
+          } catch (err) {
+            const message = err instanceof Error ? err.message : 'Unknown error';
+            socket.send(JSON.stringify({ type: 'error', message, traceId: request.traceId }));
+          } finally {
+            busy = false;
+          }
+        })();
+      });
     },
   );
 }

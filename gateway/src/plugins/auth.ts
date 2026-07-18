@@ -71,19 +71,32 @@ export function registerAuth(app: FastifyInstance, jwtSecret: string, permission
       return;
     }
 
+    // RT-090: a browser's native WebSocket constructor can't set custom
+    // request headers, so the chat WS handshake (routes/chat.ts) carries the
+    // same bearer token/org id as query params instead. Restricted to actual
+    // upgrade requests so a normal REST call can't sidestep header auth by
+    // passing credentials in the URL (which would land in access logs).
+    const isWsUpgrade = request.headers.upgrade?.toLowerCase() === 'websocket';
+    const query = request.query as Record<string, unknown>;
+
+    const rawToken = isWsUpgrade && typeof query.token === 'string' ? query.token : undefined;
     const authHeader = request.headers.authorization;
-    if (!authHeader?.startsWith('Bearer ')) {
+    const token = rawToken ?? (authHeader?.startsWith('Bearer ') ? authHeader.slice('Bearer '.length) : undefined);
+    if (!token) {
       throw new ValidationError('Missing Authorization: Bearer <token> header');
     }
 
-    const orgHeader = request.headers['x-organization-id'];
+    const orgHeader =
+      rawToken !== undefined && typeof query.organizationId === 'string'
+        ? query.organizationId
+        : request.headers['x-organization-id'];
     if (typeof orgHeader !== 'string' || orgHeader.length === 0) {
       throw new ValidationError('Missing X-Organization-Id header');
     }
 
     let claims: AccessTokenClaims;
     try {
-      claims = jwt.verify(authHeader.slice('Bearer '.length), jwtSecret) as AccessTokenClaims;
+      claims = jwt.verify(token, jwtSecret) as AccessTokenClaims;
     } catch {
       throw new ValidationError('Invalid or expired token');
     }

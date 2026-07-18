@@ -4,6 +4,7 @@ import formbody from '@fastify/formbody';
 import multipart from '@fastify/multipart';
 import swagger from '@fastify/swagger';
 import swaggerUi from '@fastify/swagger-ui';
+import websocket from '@fastify/websocket';
 import type { AppContext } from './context.js';
 import { registerErrorHandler } from './plugins/error-handler.js';
 import { registerAuth } from './plugins/auth.js';
@@ -55,6 +56,8 @@ export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
   // never legitimately larger than that, and this bounds memory use since
   // files are buffered in-memory before the S3 PutObject call.
   await app.register(multipart, { limits: { fileSize: 2 * 1024 * 1024 } });
+  // RT-090: chat streaming moved from SSE to WebSocket (routes/chat.ts).
+  await app.register(websocket);
 
   // RT-074: static mode serves the hand-written spec at docs/spect/04_API/
   // 00-openapi-v0.1.yaml as-is — routes here use TS generics + inline Zod

@@ -262,10 +262,22 @@ export interface StreamCallbacks {
   onDisconnect: () => void;
 }
 
+type ChatWsEvent =
+  | { type: 'token'; delta: string }
+  | { type: 'reasoning'; delta: string }
+  | { type: 'done'; conversationId: string; model: string; costCents: number; traceId: string; timeMs: number }
+  | { type: 'requires_approval'; approvalId: string }
+  | { type: 'error'; message: string; traceId?: string };
+
 /**
- * Native EventSource only supports GET, and this endpoint is a POST — so we
- * fetch() the stream and parse Server-Sent Events out of the response body
- * by hand (split on blank lines, pull out `event:`/`data:` fields).
+ * RT-090: chat streaming moved from SSE (fetch() + hand-parsed
+ * `event:`/`data:` frames) to a WebSocket. The gateway's WS route needs the
+ * bearer token/org id as query params — a browser's native WebSocket
+ * constructor can't set an Authorization header, unlike fetch() (see
+ * gateway/src/plugins/auth.ts's isWsUpgrade branch, which only accepts this
+ * for actual upgrade requests). Opens one connection per message, matching
+ * the previous per-request SSE lifecycle — the gateway route itself can
+ * carry multiple turns per socket for a future persistent-session client.
  */
 export async function streamChat(
   agentId: string,
@@ -276,80 +288,74 @@ export async function streamChat(
   const session = loadSession();
   if (!session) throw new Error('Not signed in');
 
-  let response: Response;
-  try {
-    response = await fetch(`${API_URL}/v1/agents/${agentId}/chat/stream`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${session.token}`,
-        'X-Organization-Id': session.organizationId,
-      },
-      body: JSON.stringify({ message, conversationId }),
-    });
-  } catch {
-    callbacks.onDisconnect();
-    return;
-  }
+  const wsUrl = new URL(`${API_URL}/v1/agents/${agentId}/chat/ws`);
+  wsUrl.protocol = wsUrl.protocol === 'https:' ? 'wss:' : 'ws:';
+  wsUrl.searchParams.set('token', session.token);
+  wsUrl.searchParams.set('organizationId', session.organizationId);
 
-  if (!response.ok || !response.body) {
-    const body = (await response.json().catch(() => null)) as ErrorEnvelope | null;
-    callbacks.onError(body?.error.message ?? `Request failed with status ${response.status}`);
-    return;
-  }
+  return new Promise((resolve) => {
+    let settled = false;
+    const settle = () => {
+      if (settled) return;
+      settled = true;
+      resolve();
+    };
 
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = '';
-  let sawDone = false;
-
-  try {
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-
-      const events = buffer.split('\n\n');
-      buffer = events.pop() ?? '';
-
-      for (const rawEvent of events) {
-        const eventLine = rawEvent.split('\n').find((l) => l.startsWith('event:'));
-        const dataLine = rawEvent.split('\n').find((l) => l.startsWith('data:'));
-        if (!eventLine || !dataLine) continue;
-
-        const eventType = eventLine.slice('event:'.length).trim();
-        const data: unknown = JSON.parse(dataLine.slice('data:'.length).trim());
-
-        if (eventType === 'token') {
-          callbacks.onToken((data as { delta: string }).delta);
-        } else if (eventType === 'reasoning') {
-          callbacks.onReasoningToken?.((data as { delta: string }).delta);
-        } else if (eventType === 'done') {
-          sawDone = true;
-          callbacks.onDone(
-            data as { conversationId: string; model: string; costCents: number; traceId: string; timeMs: number },
-          );
-        } else if (eventType === 'requires-approval') {
-          sawDone = true;
-          callbacks.onRequiresApproval((data as { approvalId: string }).approvalId);
-        } else if (eventType === 'error') {
-          sawDone = true;
-          callbacks.onError((data as { message: string }).message);
-        }
-      }
+    let socket: WebSocket;
+    try {
+      socket = new WebSocket(wsUrl);
+    } catch {
+      callbacks.onDisconnect();
+      settle();
+      return;
     }
-  } catch {
-    // reader.read() threw — connection dropped mid-stream, not a clean end.
-    sawDone = true;
-    callbacks.onDisconnect();
-    return;
-  }
 
-  // Stream ended (reader signaled done) without ever seeing a terminal SSE
-  // event — the connection was cut, not gracefully closed by the server.
-  if (!sawDone) {
-    callbacks.onDisconnect();
-  }
+    socket.onopen = () => {
+      socket.send(JSON.stringify({ message, conversationId }));
+    };
+
+    socket.onmessage = (ev) => {
+      let data: ChatWsEvent;
+      try {
+        data = JSON.parse(ev.data as string) as ChatWsEvent;
+      } catch {
+        return;
+      }
+
+      if (data.type === 'token') {
+        callbacks.onToken(data.delta);
+      } else if (data.type === 'reasoning') {
+        callbacks.onReasoningToken?.(data.delta);
+      } else if (data.type === 'done') {
+        callbacks.onDone(data);
+        socket.close();
+        settle();
+      } else if (data.type === 'requires_approval') {
+        callbacks.onRequiresApproval(data.approvalId);
+        socket.close();
+        settle();
+      } else if (data.type === 'error') {
+        callbacks.onError(data.message);
+        socket.close();
+        settle();
+      }
+    };
+
+    socket.onerror = () => {
+      // A clean terminal frame (done/requires_approval/error) always closes
+      // the socket itself right after settling, so onclose firing before
+      // settle() means the connection genuinely dropped mid-stream.
+      callbacks.onDisconnect();
+      settle();
+    };
+
+    socket.onclose = () => {
+      if (!settled) {
+        callbacks.onDisconnect();
+        settle();
+      }
+    };
+  });
 }
 
 /** Client-side JSON → file download (RT-067 skill/workflow export) — the export routes return plain JSON, so this just wraps it in a Blob rather than round-tripping through a server attachment response like downloadAuditLogExport below. */
