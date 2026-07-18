@@ -4,7 +4,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { api, loadSession, ApiError, type Session } from '@/lib/api-client';
 import type { Organization } from '@o2n/shared';
-import { TopBar } from '@/components/TopBar';
+import { Sidebar } from '@/components/Sidebar';
 
 interface Config {
   provider: string;
@@ -272,7 +272,7 @@ export default function SettingsPage() {
 
   return (
     <div>
-      {session ? <TopBar session={session} /> : null}
+      {session ? <Sidebar session={session} /> : null}
 
       <div className="page">
         {isAdmin ? (

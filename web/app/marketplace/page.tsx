@@ -11,7 +11,7 @@ import {
   type MarketplaceSkillListing,
   type Session,
 } from '@/lib/api-client';
-import { TopBar } from '@/components/TopBar';
+import { Sidebar } from '@/components/Sidebar';
 
 export default function MarketplacePage() {
   const router = useRouter();
@@ -138,7 +138,7 @@ export default function MarketplacePage() {
 
   return (
     <div>
-      {session ? <TopBar session={session} /> : null}
+      {session ? <Sidebar session={session} /> : null}
 
       <div className="page">
         <h1 style={{ fontSize: 'var(--font-size-xl)' }}>Marketplace</h1>

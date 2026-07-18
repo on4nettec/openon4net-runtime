@@ -4,7 +4,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import type { Agent } from '@o2n/shared';
 import { api, loadSession, ApiError, type Session } from '@/lib/api-client';
-import { TopBar } from '@/components/TopBar';
+import { Sidebar } from '@/components/Sidebar';
 
 interface KpiWithAgent {
   agentId: string;
@@ -109,7 +109,7 @@ export default function OutcomesPage() {
 
   return (
     <div>
-      {session ? <TopBar session={session} /> : null}
+      {session ? <Sidebar session={session} /> : null}
 
       <div className="page">
         <h1 style={{ fontSize: 'var(--font-size-xl)' }}>Outcomes</h1>

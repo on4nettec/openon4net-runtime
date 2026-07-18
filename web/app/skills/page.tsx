@@ -4,7 +4,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { api, loadSession, ApiError, downloadJson, type Session, type Skill, type SkillStep } from '@/lib/api-client';
 import type { Agent } from '@o2n/shared';
-import { TopBar } from '@/components/TopBar';
+import { Sidebar } from '@/components/Sidebar';
 
 type ToolType = SkillStep['tool'];
 
@@ -179,7 +179,7 @@ export default function SkillsPage() {
 
   return (
     <div>
-      {session ? <TopBar session={session} /> : null}
+      {session ? <Sidebar session={session} /> : null}
 
       <div className="page">
         <h1 style={{ fontSize: 'var(--font-size-xl)' }}>Skills</h1>

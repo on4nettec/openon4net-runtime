@@ -4,8 +4,9 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import type { Agent } from '@o2n/shared';
-import { api, loadSession, streamChat, ApiError } from '@/lib/api-client';
+import { api, loadSession, streamChat, ApiError, type Session } from '@/lib/api-client';
 import { applyDocumentDirection, isRtlLanguage } from '@/lib/i18n';
+import { Sidebar } from '@/components/Sidebar';
 
 interface DisplayMessage {
   role: 'user' | 'agent';
@@ -18,6 +19,7 @@ export default function AgentChatPage() {
   const router = useRouter();
   const agentId = params.id;
 
+  const [session, setSession] = useState<Session | null>(null);
   const [agent, setAgent] = useState<Agent | null>(null);
   const [messages, setMessages] = useState<DisplayMessage[]>([]);
   const [conversationId, setConversationId] = useState<string | undefined>(undefined);
@@ -49,10 +51,12 @@ export default function AgentChatPage() {
   }
 
   useEffect(() => {
-    if (!loadSession()) {
+    const s = loadSession();
+    if (!s) {
       router.push('/login');
       return;
     }
+    setSession(s);
     api
       .getAgent(agentId)
       .then(setAgent)
@@ -157,6 +161,8 @@ export default function AgentChatPage() {
 
   return (
     <div dir={isRtlLanguage(effectiveLanguage) ? 'rtl' : 'ltr'}>
+      {session ? <Sidebar session={session} /> : null}
+
       <div className="topbar">
         <Link href="/agents">{isRtlLanguage(effectiveLanguage) ? 'Agents →' : '← Agents'}</Link>
         <nav>
@@ -172,7 +178,6 @@ export default function AgentChatPage() {
               {rateLimit.usedThisMinute}/{rateLimit.limitPerMinute} req/min
             </span>
           ) : null}
-          <Link href="/settings">Settings</Link>
         </nav>
       </div>
 

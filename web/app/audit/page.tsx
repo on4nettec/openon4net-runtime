@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import type { Agent, AuditLog } from '@o2n/shared';
 import { api, loadSession, ApiError, downloadAuditLogExport, type Session } from '@/lib/api-client';
-import { TopBar } from '@/components/TopBar';
+import { Sidebar } from '@/components/Sidebar';
 
 const PAGE_SIZE = 25;
 
@@ -86,7 +86,7 @@ export default function AuditPage() {
 
   return (
     <div>
-      {session ? <TopBar session={session} /> : null}
+      {session ? <Sidebar session={session} /> : null}
 
       <div className="page" style={{ maxWidth: 960 }}>
         <h1 style={{ fontSize: 'var(--font-size-xl)' }}>Audit Log</h1>

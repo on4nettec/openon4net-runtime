@@ -110,6 +110,13 @@
   /* Motion */
   --duration-fast: 120ms;
   --duration-normal: 180ms;
+
+  /* RT-097 — sidebar; set by Sidebar.tsx once mounted, defaulted here so
+     the first paint before hydration doesn't flash unstyled. */
+  --sidebar-width: 240px;
+  --sidebar-content-offset: 240px;
+  --z-sidebar: 100;
+  --z-modal: 1200;
 }
 
 /* ---------------------------------------------------------------------
@@ -126,6 +133,11 @@ body {
   line-height: var(--leading-normal);
   background: var(--color-background);
   color: var(--color-foreground);
+  /* RT-097 — pushes the whole page right of the fixed sidebar; .page's own
+     margin:0 auto then centers content within that narrower remaining
+     area, so no per-page layout change was needed for the sidebar rollout. */
+  padding-left: var(--sidebar-content-offset);
+  transition: padding-left var(--duration-normal) ease;
 }
 
 a {
@@ -237,6 +249,10 @@ button.danger:hover:not(:disabled) {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
   padding: var(--space-5);
+  /* RT-100 — every page puts wide fixed-width tables directly inside
+     .card; scrolling the card horizontally (instead of the whole page)
+     keeps narrow viewports usable without a per-page rewrite. */
+  overflow-x: auto;
 }
 
 .field {
@@ -318,4 +334,133 @@ button.danger:hover:not(:disabled) {
 .badge-neutral {
   background: var(--color-surface-raised);
   color: var(--color-muted-foreground);
+}
+
+/* ---------------------------------------------------------------------
+ * Sidebar (RT-097) — collapsible on desktop, drawer/overlay on mobile.
+ * ------------------------------------------------------------------- */
+.sidebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: var(--sidebar-width);
+  display: flex;
+  flex-direction: column;
+  background: var(--color-surface);
+  border-right: 1px solid var(--color-border);
+  padding: var(--space-4) var(--space-3);
+  gap: var(--space-2);
+  overflow-y: auto;
+  z-index: var(--z-sidebar, 100);
+  transition:
+    width var(--duration-normal) ease,
+    transform var(--duration-normal) ease;
+}
+
+.sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+  min-height: 32px;
+}
+
+.sidebar-header strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebar-collapse-toggle,
+.sidebar-mobile-toggle {
+  padding: var(--space-1) var(--space-2);
+  flex-shrink: 0;
+}
+
+.sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  flex: 1;
+}
+
+.sidebar-link {
+  display: block;
+  padding: var(--space-2) var(--space-2-5);
+  border-radius: var(--radius-md);
+  color: var(--color-muted-foreground);
+  font-size: var(--font-size-sm);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: background-color var(--duration-fast) ease, color var(--duration-fast) ease;
+}
+
+.sidebar-link:hover {
+  background: var(--color-surface-raised);
+  color: var(--color-foreground);
+}
+
+.sidebar-link-active {
+  background: var(--color-primary-subtle);
+  color: var(--color-foreground);
+  font-weight: var(--font-weight-semibold);
+}
+
+.sidebar-signout {
+  width: 100%;
+}
+
+.sidebar-mobile-toggle {
+  display: none;
+  position: fixed;
+  top: var(--space-3);
+  left: var(--space-3);
+  z-index: var(--z-modal, 1200);
+}
+
+.sidebar-backdrop {
+  display: none;
+}
+
+/* RT-100 — below this width the sidebar becomes an overlay drawer instead
+   of a permanent column: it starts off-canvas, content reclaims the space
+   (body's padding-left is zeroed via --sidebar-content-offset, set in
+   Sidebar.tsx's matchMedia listener), and a hamburger button + backdrop
+   toggle it open on top of the page. */
+@media (max-width: 900px) {
+  .sidebar {
+    transform: translateX(-100%);
+    box-shadow: var(--shadow-lg);
+  }
+
+  .sidebar.sidebar-open {
+    transform: translateX(0);
+    width: 240px;
+  }
+
+  .sidebar-mobile-toggle {
+    display: inline-flex;
+  }
+
+  .sidebar-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgb(0 0 0 / 0.5);
+    z-index: calc(var(--z-modal, 1200) - 1);
+  }
+
+  /* RT-100 — tighter spacing + room for the fixed hamburger button so it
+     doesn't sit on top of page titles. */
+  .page,
+  .page-wide {
+    padding: var(--space-12) var(--space-4) var(--space-6);
+  }
+
+  .card {
+    padding: var(--space-4);
+  }
 }

@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import type { ApprovalQueueEntry } from '@o2n/shared';
 import { api, loadSession, ApiError, type Session } from '@/lib/api-client';
-import { TopBar } from '@/components/TopBar';
+import { Sidebar } from '@/components/Sidebar';
 
 function describeEntry(entry: ApprovalQueueEntry): string {
   const message = entry.actionData.message;
@@ -66,7 +66,7 @@ export default function ApprovalsPage() {
 
   return (
     <div>
-      {session ? <TopBar session={session} /> : null}
+      {session ? <Sidebar session={session} /> : null}
 
       <div className="page">
         <h1 style={{ fontSize: 'var(--font-size-xl)' }}>Approvals</h1>

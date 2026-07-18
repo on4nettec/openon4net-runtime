@@ -7,7 +7,7 @@ import type { Agent, KpiDefinition, Organization, User, Workspace } from '@o2n/s
 import { AGENT_ROLE_CATALOG } from '@o2n/shared';
 import { api, loadSession, ApiError, type Session } from '@/lib/api-client';
 import { applyDocumentDirection } from '@/lib/i18n';
-import { TopBar } from '@/components/TopBar';
+import { Sidebar } from '@/components/Sidebar';
 
 // RT-083 — offered up front without typing a code by hand; the gateway can
 // actually generate any ISO-shaped code on demand (GET /v1/locales/:lang).
@@ -359,7 +359,7 @@ export default function AgentsPage() {
 
   return (
     <div>
-      <TopBar session={session} />
+      <Sidebar session={session} />
 
       <div className="page">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>

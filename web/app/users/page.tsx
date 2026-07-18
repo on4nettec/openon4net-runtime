@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import type { User, Workspace } from '@o2n/shared';
 import { api, loadSession, ApiError, type Invitation, type Session } from '@/lib/api-client';
-import { TopBar } from '@/components/TopBar';
+import { Sidebar } from '@/components/Sidebar';
 
 interface RoleOption {
   id: string;
@@ -163,7 +163,7 @@ export default function UsersPage() {
 
   return (
     <div>
-      {session ? <TopBar session={session} /> : null}
+      {session ? <Sidebar session={session} /> : null}
 
       <div className="page">
         <h1 style={{ fontSize: 'var(--font-size-xl)' }}>Users</h1>
