@@ -9,33 +9,55 @@ import { api, loadSession, streamChat, ApiError, type Session } from '@/lib/api-
 import { applyDocumentDirection, isRtlLanguage, useLocaleStrings } from '@/lib/i18n';
 import { Sidebar } from '@/components/Sidebar';
 
+/** RT-085 — one tool call the model made this turn, either already resolved (from history) or still in flight (live stream). */
+interface DisplayToolCall {
+  name: string;
+  arguments: Record<string, unknown>;
+  result?: unknown;
+  error?: string;
+}
+
 interface DisplayMessage {
   role: 'user' | 'agent';
   content: string;
   pending?: boolean;
   /** RT-084 — the reasoning/thinking trace behind this specific agent turn, if one was captured. */
   reasoning?: string;
+  /** RT-085 — tool calls the model made en route to this answer, if any. */
+  toolCalls?: DisplayToolCall[];
 }
 
 /**
- * RT-084 — a 'thought' row is always immediately followed by the 'agent'
- * row it belongs to (chat-service.ts's persistTurn writes them in that
- * order within the same transaction), so pairing by position is reliable.
- * 'thought' rows are never rendered as their own bubble.
+ * RT-084/RT-085 — a 'thought' row and any 'tool' rows are always written
+ * immediately before the 'agent' row they belong to, in that order, within
+ * the same transaction (chat-service.ts's persistTurn), so pairing by
+ * position is reliable. Neither is ever rendered as its own bubble.
  */
 function toDisplayMessages(history: Message[]): DisplayMessage[] {
   const result: DisplayMessage[] = [];
   let pendingReasoning: string | undefined;
+  let pendingToolCalls: DisplayToolCall[] = [];
   for (const m of history) {
     if (m.role === 'thought') {
       pendingReasoning = m.content;
+    } else if (m.role === 'tool') {
+      const meta = m.metadata as { name?: string; arguments?: Record<string, unknown>; result?: unknown; error?: string };
+      if (meta?.name) {
+        pendingToolCalls.push({
+          name: meta.name,
+          arguments: meta.arguments ?? {},
+          ...(meta.error !== undefined ? { error: meta.error } : { result: meta.result }),
+        });
+      }
     } else if (m.role === 'user' || m.role === 'agent') {
       result.push({
         role: m.role,
         content: m.content,
         ...(m.role === 'agent' && pendingReasoning ? { reasoning: pendingReasoning } : {}),
+        ...(m.role === 'agent' && pendingToolCalls.length ? { toolCalls: pendingToolCalls } : {}),
       });
       pendingReasoning = undefined;
+      pendingToolCalls = [];
     }
   }
   return result;
@@ -79,6 +101,19 @@ export default function AgentChatPage() {
   const [expandedReasoning, setExpandedReasoning] = useState<Set<number>>(new Set());
   function toggleReasoning(index: number) {
     setExpandedReasoning((prev) => {
+      const next = new Set(prev);
+      if (next.has(index)) next.delete(index);
+      else next.add(index);
+      return next;
+    });
+  }
+
+  // RT-085 — tool calls are collapsed by default, same reasoning as
+  // reasoning traces above (can be long/noisy, and always visible via
+  // its own toggle rather than cluttering the answer bubble).
+  const [expandedTools, setExpandedTools] = useState<Set<number>>(new Set());
+  function toggleTools(index: number) {
+    setExpandedTools((prev) => {
       const next = new Set(prev);
       if (next.has(index)) next.delete(index);
       else next.add(index);
@@ -313,6 +348,30 @@ export default function AgentChatPage() {
             return next;
           });
         },
+        onToolCall: (name, args) => {
+          setMessages((prev) => {
+            const next = [...prev];
+            const last = next[next.length - 1];
+            if (last?.role === 'agent') last.toolCalls = [...(last.toolCalls ?? []), { name, arguments: args }];
+            return next;
+          });
+        },
+        onToolResult: (name, result, error) => {
+          setMessages((prev) => {
+            const next = [...prev];
+            const last = next[next.length - 1];
+            // Matches the most recent unresolved call by name — one live
+            // tool call in flight at a time per the gateway's own busy-guard.
+            const call = [...(last?.toolCalls ?? [])]
+              .reverse()
+              .find((c) => c.name === name && c.result === undefined && c.error === undefined);
+            if (call) {
+              if (error !== undefined) call.error = error;
+              else call.result = result;
+            }
+            return next;
+          });
+        },
         onDone: ({ conversationId: newConversationId }) => {
           setConversationId(newConversationId);
           setMessages((prev) => {
@@ -531,6 +590,47 @@ export default function AgentChatPage() {
                       {expandedReasoning.has(i) ? '🧠 Hide reasoning' : '🧠 Show reasoning'}
                     </button>
                     {expandedReasoning.has(i) ? <div>{m.reasoning}</div> : null}
+                  </div>
+                ) : null}
+                {m.toolCalls?.length ? (
+                  // RT-085 — one block per turn listing every tool call made
+                  // this turn, in order; each call shows its own
+                  // arguments/result (or error) once expanded.
+                  <div
+                    className="card"
+                    style={{
+                      marginBottom: 6,
+                      fontSize: 12,
+                      background: 'transparent',
+                      border: '1px dashed var(--color-border)',
+                    }}
+                  >
+                    <button
+                      className="secondary"
+                      style={{ fontSize: 11, marginBottom: expandedTools.has(i) ? 6 : 0 }}
+                      onClick={() => toggleTools(i)}
+                    >
+                      {expandedTools.has(i)
+                        ? '🔧 Hide tool calls'
+                        : `🔧 Show tool calls (${m.toolCalls.length})`}
+                    </button>
+                    {expandedTools.has(i) ? (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                        {m.toolCalls.map((call, callIndex) => (
+                          <div key={callIndex}>
+                            <div style={{ fontWeight: 600 }}>{call.name}</div>
+                            <div className="muted">{JSON.stringify(call.arguments)}</div>
+                            {call.error ? (
+                              <div className="error">{call.error}</div>
+                            ) : call.result !== undefined ? (
+                              <div>{JSON.stringify(call.result)}</div>
+                            ) : (
+                              <div className="muted">…</div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
                   </div>
                 ) : null}
                 <div

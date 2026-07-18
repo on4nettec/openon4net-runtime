@@ -32,6 +32,7 @@ export function registerChatRoutes(app: FastifyInstance, ctx: AppContext): void 
         message: parsed.data.message,
         conversationId: parsed.data.conversationId,
         traceId: request.traceId,
+        userPermissions: request.auth.permissions,
       });
 
       if (outcome.kind === 'requires_approval') {
@@ -106,6 +107,7 @@ export function registerChatRoutes(app: FastifyInstance, ctx: AppContext): void 
               message: parsed.data.message,
               conversationId: parsed.data.conversationId,
               traceId: request.traceId,
+              userPermissions: request.auth.permissions,
             })) {
               socket.send(JSON.stringify(event));
             }

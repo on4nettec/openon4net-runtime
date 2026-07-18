@@ -36,7 +36,7 @@ export async function executeSkill(
       // skill definition's own step defaults, so a stored skill can still
       // take a dynamic value (e.g. a different chatId) at run time.
       const mergedParams = { ...step.params, ...params };
-      const result = await executeTool({ ...step, params: mergedParams }, ctx);
+      const result = await executeTool({ ...step, params: mergedParams }, ctx.env);
       stepResults.push(result);
     }
 

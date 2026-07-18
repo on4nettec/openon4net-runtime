@@ -156,7 +156,7 @@ export class WorkflowExecutor {
     }
 
     if (step.type === 'tool') {
-      return executeTool(step, this.ctx);
+      return executeTool(step, this.ctx.env);
     }
 
     if (step.type === 'plugin') {

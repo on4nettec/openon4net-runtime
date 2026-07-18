@@ -246,6 +246,9 @@ export interface StreamCallbacks {
   onToken: (delta: string) => void;
   /** RT-084 — a reasoning-trace chunk, distinct from the answer itself. Optional: older callers just never see it. */
   onReasoningToken?: (delta: string) => void;
+  /** RT-085 — the model decided to call a tool instead of (or before) answering. Optional: older callers just never see it. */
+  onToolCall?: (name: string, args: Record<string, unknown>) => void;
+  onToolResult?: (name: string, result: unknown, error: string | undefined) => void;
   onDone: (info: { conversationId: string; model: string; costCents: number; traceId: string; timeMs: number }) => void;
   onRequiresApproval: (approvalId: string) => void;
   onError: (message: string) => void;
@@ -265,6 +268,8 @@ export interface StreamCallbacks {
 type ChatWsEvent =
   | { type: 'token'; delta: string }
   | { type: 'reasoning'; delta: string }
+  | { type: 'tool_call'; name: string; arguments: Record<string, unknown> }
+  | { type: 'tool_result'; name: string; result?: unknown; error?: string }
   | { type: 'done'; conversationId: string; model: string; costCents: number; traceId: string; timeMs: number }
   | { type: 'requires_approval'; approvalId: string }
   | { type: 'error'; message: string; traceId?: string };
@@ -326,6 +331,10 @@ export async function streamChat(
         callbacks.onToken(data.delta);
       } else if (data.type === 'reasoning') {
         callbacks.onReasoningToken?.(data.delta);
+      } else if (data.type === 'tool_call') {
+        callbacks.onToolCall?.(data.name, data.arguments);
+      } else if (data.type === 'tool_result') {
+        callbacks.onToolResult?.(data.name, data.result, data.error);
       } else if (data.type === 'done') {
         callbacks.onDone(data);
         socket.close();

@@ -1,4 +1,4 @@
-import type { LlmCompletionResult, LlmMessage, LlmProvider } from '@o2n/llm-providers';
+import type { LlmCompletionResult, LlmMessage, LlmProvider, LlmToolDefinition } from '@o2n/llm-providers';
 import type { Agent, Conversation } from '@o2n/shared';
 import {
   AgentNotActiveError,
@@ -26,6 +26,18 @@ import type { EmbeddingService } from './embedding-service.js';
 import type { PolicyService } from './policy-service.js';
 import { calculateCostCents, estimateCostCentsFromChars, estimatePromptCostCents } from './pricing.js';
 import { llmCostCentsTotal } from '../observability/metrics.js';
+import { buildAvailableTools, toolIdForFunctionName } from './agentic-tools.js';
+import { executeTool } from './tool-dispatcher.js';
+
+/** RT-085 — a chat turn's agentic loop never makes more than this many tool-decision round-trips; a model stuck re-calling tools forever must not hang the turn or run up unbounded cost. */
+const MAX_TOOL_ITERATIONS = 5;
+
+interface ToolLogEntry {
+  name: string;
+  arguments: Record<string, unknown>;
+  result?: unknown;
+  error?: string;
+}
 
 /** A chat-cost/policy approval that sits unresolved this long auto-expires (services/approval-expiry-scheduler.ts) — a stale request shouldn't silently execute if approved days later against now-stale context. */
 const APPROVAL_EXPIRY_MS = 24 * 60 * 60 * 1000;
@@ -38,6 +50,15 @@ export interface ChatParams {
   message: string;
   conversationId?: string | undefined;
   traceId: string;
+  /**
+   * RT-085 — the acting user's resolved RBAC permissions (request.auth.permissions),
+   * used to decide which tools (if any) the model is allowed to call this
+   * turn — see agentic-tools.ts's buildAvailableTools(). Omitted (not `[]`)
+   * for every system/scheduler/webhook/workflow-initiated call site: tool
+   * calling is deliberately scoped to interactive human chat only for now,
+   * since there's no human accountable for an autonomously-triggered call.
+   */
+  userPermissions?: string[];
 }
 
 export interface ChatSuccess {
@@ -61,6 +82,9 @@ export type ChatStreamEvent =
   // RT-084 — a reasoning-trace chunk, distinct from the answer itself; the
   // frontend renders these separately (see web/app/agents/[id]/chat).
   | { type: 'reasoning'; delta: string }
+  // RT-085 — the model decided to call a tool instead of answering yet.
+  | { type: 'tool_call'; name: string; arguments: Record<string, unknown> }
+  | { type: 'tool_result'; name: string; result?: unknown; error?: string }
   | { type: 'done'; conversationId: string; model: string; costCents: number; traceId: string; timeMs: number }
   | { type: 'requires_approval'; approvalId: string };
 
@@ -72,6 +96,8 @@ interface PreparedChat {
   promptChars: number;
   llmProvider: LlmProvider;
   providerName: string;
+  /** RT-085 — undefined when the acting user has none of the gated tool permissions; see agentic-tools.ts. */
+  tools?: LlmToolDefinition[];
 }
 
 type PrepareOutcome = { kind: 'ready'; prepared: PreparedChat } | { kind: 'requires_approval'; approvalId: string };
@@ -192,17 +218,18 @@ export class ChatService {
     const llmMessages: LlmMessage[] = [
       { role: 'system', content: systemPrompt },
       ...history
-        .map((m) => {
+        .map((m): LlmMessage | null => {
           const role = toLlmRole(m.role);
           return role ? { role, content: m.content } : null;
         })
         .filter((m): m is LlmMessage => m !== null),
     ];
     const promptChars = llmMessages.reduce((sum, m) => sum + m.content.length, 0);
+    const tools = buildAvailableTools(params.userPermissions ?? []);
 
     return {
       kind: 'ready',
-      prepared: { agent, conversation, llmMessages, model, promptChars, llmProvider, providerName },
+      prepared: { agent, conversation, llmMessages, model, promptChars, llmProvider, providerName, ...(tools ? { tools } : {}) },
     };
   }
 
@@ -214,10 +241,22 @@ export class ChatService {
     traceId: string,
     providerName: string,
     result: { content: string; model: string; costCents: number; tokens: number; reasoning?: string },
+    toolLog: ToolLogEntry[] = [],
   ): Promise<void> {
     await withTransaction(this.db, async (client) => {
       const memoryService = new MemoryService(client, this.redis, this.env.SHORT_MEMORY_TTL_SECONDS, this.embeddingService);
-      // RT-084 — written first so it lands immediately before the agent's
+      // RT-085 — written first: each tool call the model made this turn,
+      // in the order they happened, before the final answer they led to.
+      // 'tool' rows are never replayed as prior-turn LLM history
+      // (toLlmRole() returns null for them) — same treatment as 'thought'.
+      for (const entry of toolLog) {
+        await memoryService.appendMessage(conversationId, {
+          role: 'tool',
+          content: entry.error ? `${entry.name} failed: ${entry.error}` : `Called ${entry.name}`,
+          metadata: { name: entry.name, arguments: entry.arguments, ...(entry.error ? { error: entry.error } : { result: entry.result }) },
+        });
+      }
+      // RT-084 — written next so it lands immediately before the agent's
       // answer in the conversation's created_at ordering, letting the
       // frontend pair a 'thought' row with the 'agent' row that follows it.
       if (result.reasoning) {
@@ -258,9 +297,10 @@ export class ChatService {
     llmProvider: LlmProvider,
     params: ChatParams,
     agentId: string,
+    tools?: LlmToolDefinition[],
   ): Promise<LlmCompletionResult> {
     try {
-      return await new LlmService(llmProvider).completeWithRetry({ model, messages });
+      return await new LlmService(llmProvider).completeWithRetry({ model, messages, ...(tools ? { tools } : {}) });
     } catch (err) {
       await new AuditService(this.db).logAction({
         organizationId: params.organizationId,
@@ -275,13 +315,121 @@ export class ChatService {
     }
   }
 
+  /**
+   * RT-085 — the ReAct loop: call the model with the available tools
+   * attached, and if it chooses to call one (or more) instead of answering,
+   * execute each and feed the result back for another round — up to
+   * MAX_TOOL_ITERATIONS. Yields `tool_call`/`tool_result` events as they
+   * happen (chatStream() forwards these to the client immediately;
+   * chat()/the non-streaming path just drains and discards them) and
+   * returns the final `LlmCompletionResult` plus the full tool log for
+   * persistence. `llmMessages` is mutated with a local copy only — the
+   * assistant/tool round-trip messages exist for this turn's provider calls
+   * alone, never written back into `prepared.llmMessages` or replayed as
+   * conversation history in a future turn (see toLlmRole()).
+   *
+   * A tool call gated by an org policy (RT-008/RT-056, same
+   * checkPolicyGate reasoning as routes/tools.ts's direct HTTP path) is
+   * deliberately NOT executed and NOT queued for later approval — there is
+   * no async "resume this chat turn after a human approves" mechanism yet.
+   * Instead the model is told the action requires manual approval, so it
+   * can say so to the user rather than the turn silently bypassing the
+   * same gate a direct API call would hit.
+   */
+  private async *runToolLoop(
+    llmMessages: LlmMessage[],
+    model: string,
+    llmProvider: LlmProvider,
+    tools: LlmToolDefinition[] | undefined,
+    params: ChatParams,
+    agentId: string,
+  ): AsyncGenerator<
+    ChatStreamEvent,
+    { result: LlmCompletionResult; toolLog: ToolLogEntry[]; totalInputTokens: number; totalOutputTokens: number },
+    void
+  > {
+    const toolLog: ToolLogEntry[] = [];
+    // Every callModel() round this turn makes costs real tokens — a
+    // multi-round tool loop must be billed/audited for all of them, not
+    // just whichever round happens to produce the final answer.
+    let totalInputTokens = 0;
+    let totalOutputTokens = 0;
+    if (!tools) {
+      const result = await this.callModel(llmMessages, model, llmProvider, params, agentId);
+      return { result, toolLog, totalInputTokens: result.inputTokens, totalOutputTokens: result.outputTokens };
+    }
+
+    const messages = [...llmMessages];
+    for (let i = 0; i < MAX_TOOL_ITERATIONS; i++) {
+      const result = await this.callModel(messages, model, llmProvider, params, agentId, tools);
+      totalInputTokens += result.inputTokens;
+      totalOutputTokens += result.outputTokens;
+      if (!result.toolCalls?.length) {
+        return { result, toolLog, totalInputTokens, totalOutputTokens };
+      }
+
+      messages.push({ role: 'assistant', content: result.content, toolCalls: result.toolCalls });
+
+      for (const call of result.toolCalls) {
+        const toolId = toolIdForFunctionName(call.name);
+        let entry: ToolLogEntry;
+
+        if (!toolId) {
+          entry = { name: call.name, arguments: call.arguments, error: `Unknown tool: ${call.name}` };
+        } else {
+          const actionType = toolId === 'telegram-send' ? 'tool-telegram-send' : 'tool-webhook-send';
+          const policyResult = await this.policyService.evaluate(params.organizationId, {
+            estimatedCostCents: 0,
+            actionType,
+          });
+          if (policyResult.requiresApproval) {
+            entry = {
+              name: call.name,
+              arguments: call.arguments,
+              error: 'This action requires manual approval and was not executed automatically from chat.',
+            };
+          } else {
+            try {
+              const toolResult = await executeTool({ id: call.id, type: 'tool', tool: toolId, params: call.arguments }, this.env);
+              entry = { name: call.name, arguments: call.arguments, result: toolResult };
+            } catch (err) {
+              entry = { name: call.name, arguments: call.arguments, error: err instanceof O2NError ? err.message : 'Tool execution failed' };
+            }
+          }
+        }
+
+        toolLog.push(entry);
+        yield { type: 'tool_call', name: entry.name, arguments: entry.arguments };
+        yield entry.error
+          ? { type: 'tool_result', name: entry.name, error: entry.error }
+          : { type: 'tool_result', name: entry.name, result: entry.result };
+        messages.push({ role: 'tool', content: JSON.stringify(entry.error ? { error: entry.error } : entry.result), toolCallId: call.id });
+      }
+    }
+
+    // Safety cap hit — one last call with tools withheld so the model is
+    // forced to answer in plain text instead of looping forever.
+    const finalResult = await this.callModel(messages, model, llmProvider, params, agentId);
+    totalInputTokens += finalResult.inputTokens;
+    totalOutputTokens += finalResult.outputTokens;
+    return { result: finalResult, toolLog, totalInputTokens, totalOutputTokens };
+  }
+
   async chat(params: ChatParams, skipApprovalGate = false): Promise<ChatOutcome> {
     const outcome = await this.prepare(params, skipApprovalGate);
     if (outcome.kind === 'requires_approval') return outcome;
-    const { agent, conversation, llmMessages, model, llmProvider, providerName } = outcome.prepared;
+    const { agent, conversation, llmMessages, model, llmProvider, providerName, tools } = outcome.prepared;
 
-    const result = await this.callModel(llmMessages, model, llmProvider, params, agent.id);
-    const costCents = calculateCostCents(result.model, result.inputTokens, result.outputTokens, providerName);
+    // RT-085 — drain the loop's yielded tool_call/tool_result events without
+    // exposing them in ChatOutcome's JSON shape (out of scope for the
+    // non-streaming response for now); they're still visible afterward via
+    // the persisted 'tool' conversation rows either way.
+    const loop = this.runToolLoop(llmMessages, model, llmProvider, tools, params, agent.id);
+    let step = await loop.next();
+    while (!step.done) step = await loop.next();
+    const { result, toolLog, totalInputTokens, totalOutputTokens } = step.value;
+
+    const costCents = calculateCostCents(result.model, totalInputTokens, totalOutputTokens, providerName);
 
     await this.persistTurn(
       conversation.id,
@@ -294,9 +442,10 @@ export class ChatService {
         content: result.content,
         model: result.model,
         costCents,
-        tokens: result.inputTokens + result.outputTokens,
+        tokens: totalInputTokens + totalOutputTokens,
         ...(result.reasoning ? { reasoning: result.reasoning } : {}),
       },
+      toolLog,
     );
 
     await this.maybeSummarize(conversation.id, model, llmProvider);
@@ -317,35 +466,74 @@ export class ChatService {
       yield { type: 'requires_approval', approvalId: outcome.approvalId };
       return;
     }
-    const { agent, conversation, llmMessages, model, promptChars, llmProvider, providerName } = outcome.prepared;
+    const { agent, conversation, llmMessages, model, promptChars, llmProvider, providerName, tools } = outcome.prepared;
 
     const start = Date.now();
     let full = '';
     let reasoning = '';
-    try {
-      for await (const chunk of new LlmService(llmProvider).stream({ model, messages: llmMessages })) {
-        if (chunk.isReasoning) {
-          reasoning += chunk.delta;
-          yield { type: 'reasoning', delta: chunk.delta };
-        } else {
-          full += chunk.delta;
-          yield { type: 'token', delta: chunk.delta };
-        }
+    let costCents: number;
+    let tokens: number;
+    let toolLog: ToolLogEntry[] = [];
+
+    if (tools) {
+      // RT-085 — an agent with tool permissions granted: the loop's
+      // tool-decision rounds are non-streaming complete() calls (executing
+      // a tool requires the FULL call, not partial streamed JSON
+      // arguments), forwarded live as tool_call/tool_result events. Once
+      // the model settles on a plain-text answer, that answer is already a
+      // complete string from the loop's last round — emitted as one token
+      // event rather than paying for a second, separately-streamed
+      // provider call just to get per-token delivery of the same text.
+      let result: LlmCompletionResult;
+      try {
+        const loopResult = yield* this.runToolLoop(llmMessages, model, llmProvider, tools, params, agent.id);
+        result = loopResult.result;
+        toolLog = loopResult.toolLog;
+      } catch (err) {
+        await new AuditService(this.db).logAction({
+          organizationId: params.organizationId,
+          agentId: agent.id,
+          userId: params.userId,
+          actionType: 'agent-chat',
+          actionData: { traceId: params.traceId, error: err instanceof O2NError ? err.message : 'unknown error' },
+          modelUsed: model,
+          status: 'failed',
+        });
+        throw err;
       }
-    } catch (err) {
-      await new AuditService(this.db).logAction({
-        organizationId: params.organizationId,
-        agentId: agent.id,
-        userId: params.userId,
-        actionType: 'agent-chat',
-        actionData: { traceId: params.traceId, error: err instanceof O2NError ? err.message : 'unknown error' },
-        modelUsed: model,
-        status: 'failed',
-      });
-      throw err;
+      full = result.content;
+      reasoning = result.reasoning ?? '';
+      if (result.reasoning) yield { type: 'reasoning', delta: result.reasoning };
+      if (result.content) yield { type: 'token', delta: result.content };
+      costCents = calculateCostCents(result.model, result.inputTokens, result.outputTokens, providerName);
+      tokens = result.inputTokens + result.outputTokens;
+    } else {
+      try {
+        for await (const chunk of new LlmService(llmProvider).stream({ model, messages: llmMessages })) {
+          if (chunk.isReasoning) {
+            reasoning += chunk.delta;
+            yield { type: 'reasoning', delta: chunk.delta };
+          } else {
+            full += chunk.delta;
+            yield { type: 'token', delta: chunk.delta };
+          }
+        }
+      } catch (err) {
+        await new AuditService(this.db).logAction({
+          organizationId: params.organizationId,
+          agentId: agent.id,
+          userId: params.userId,
+          actionType: 'agent-chat',
+          actionData: { traceId: params.traceId, error: err instanceof O2NError ? err.message : 'unknown error' },
+          modelUsed: model,
+          status: 'failed',
+        });
+        throw err;
+      }
+      costCents = estimateCostCentsFromChars(model, promptChars, full.length, providerName);
+      tokens = Math.ceil((promptChars + full.length) / 4);
     }
 
-    const costCents = estimateCostCentsFromChars(model, promptChars, full.length, providerName);
     await this.persistTurn(
       conversation.id,
       params.organizationId,
@@ -357,9 +545,10 @@ export class ChatService {
         content: full,
         model,
         costCents,
-        tokens: Math.ceil((promptChars + full.length) / 4),
+        tokens,
         ...(reasoning ? { reasoning } : {}),
       },
+      toolLog,
     );
 
     await this.maybeSummarize(conversation.id, model, llmProvider);
