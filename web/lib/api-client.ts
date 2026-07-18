@@ -676,6 +676,32 @@ export const api = {
   updateOrganization: (input: { name?: string; settings?: Record<string, unknown>; language?: string }) =>
     request<Organization>('/v1/organization', { method: 'PATCH', body: JSON.stringify(input) }),
 
+  // RT-030 — bypasses request()'s JSON-forcing Content-Type logic: a
+  // multipart upload needs the browser to set its own
+  // "multipart/form-data; boundary=..." header, which setting
+  // Content-Type manually would break.
+  uploadBranding: async (file: File, variant: 'light' | 'dark'): Promise<Organization> => {
+    const session = loadSession();
+    const form = new FormData();
+    form.set('variant', variant);
+    form.set('logo', file);
+    const headers = new Headers();
+    if (session) {
+      headers.set('Authorization', `Bearer ${session.token}`);
+      headers.set('X-Organization-Id', session.organizationId);
+    }
+    const response = await fetch(`${API_URL}/v1/organization/branding`, { method: 'POST', body: form, headers });
+    if (!response.ok) {
+      const body = (await response.json().catch(() => null)) as ErrorEnvelope | null;
+      throw new ApiError(
+        body?.error.code ?? 'UNKNOWN_ERROR',
+        body?.error.message ?? `Upload failed with status ${response.status}`,
+        response.status,
+      );
+    }
+    return (await response.json()) as Organization;
+  },
+
   // RT-083 — i18n. getMe() also doubles as the first-login check: a null
   // language means the frontend should show the language picker before
   // continuing past login.

@@ -116,4 +116,32 @@ describe('OrgService', () => {
       expect(refreshed.language).toBe('fa');
     });
   });
+
+  describe('updateBranding (RT-030)', () => {
+    it('defaults to null for both logo variants (the default O2N mark)', async () => {
+      const fixture = await withFixture();
+      const orgService = new OrgService(db);
+      const org = await orgService.getById(fixture.organizationId);
+      expect(org.logoLightUrl).toBeNull();
+      expect(org.logoDarkUrl).toBeNull();
+    });
+
+    it('sets one logo variant without touching the other', async () => {
+      const fixture = await withFixture();
+      const orgService = new OrgService(db);
+
+      const afterLight = await orgService.updateBranding(fixture.organizationId, {
+        logoLightUrl: 'https://minio.example.com/o2n-files/branding/org-1/logo-light.png',
+      });
+      expect(afterLight.logoLightUrl).toContain('logo-light.png');
+      expect(afterLight.logoDarkUrl).toBeNull();
+
+      const afterDark = await orgService.updateBranding(fixture.organizationId, {
+        logoDarkUrl: 'https://minio.example.com/o2n-files/branding/org-1/logo-dark.png',
+      });
+      // Setting dark must not clobber the light url set moments ago.
+      expect(afterDark.logoLightUrl).toContain('logo-light.png');
+      expect(afterDark.logoDarkUrl).toContain('logo-dark.png');
+    });
+  });
 });

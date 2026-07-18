@@ -45,6 +45,7 @@ const PERMISSION_CATALOG: { resource: string; permissions: string[] }[] = [
   { resource: 'skill-proposals', permissions: ['skill-proposals:read', 'skill-proposals:approve'] },
   { resource: 'marketplace', permissions: ['marketplace:read', 'marketplace:install', 'marketplace:publish', 'marketplace:*'] },
   { resource: 'organization', permissions: ['organization:read', 'organization:write', 'organization:*'] },
+  { resource: 'branding', permissions: ['branding:update'] },
   { resource: 'invitations', permissions: ['invitations:create', 'invitations:read', 'invitations:revoke', 'invitations:*'] },
   { resource: 'workflows', permissions: ['workflows:create', 'workflows:read', 'workflows:update', 'workflows:run', 'workflows:*'] },
 ];

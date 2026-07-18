@@ -44,6 +44,10 @@ export default function SettingsPage() {
   const [savingOrg, setSavingOrg] = useState(false);
   const [orgSaveError, setOrgSaveError] = useState<string | null>(null);
 
+  // RT-030 — branding logo upload.
+  const [uploadingLogo, setUploadingLogo] = useState<'light' | 'dark' | null>(null);
+  const [logoUploadError, setLogoUploadError] = useState<string | null>(null);
+
   const [auditRetentionDays, setAuditRetentionDays] = useState('');
   const [savingRetention, setSavingRetention] = useState(false);
   const [retentionSaveError, setRetentionSaveError] = useState<string | null>(null);
@@ -195,6 +199,20 @@ export default function SettingsPage() {
     }
   }
 
+  async function handleUploadLogo(variant: 'light' | 'dark', file: File | undefined) {
+    if (!file) return;
+    setUploadingLogo(variant);
+    setLogoUploadError(null);
+    try {
+      const org = await api.uploadBranding(file, variant);
+      setOrganization(org);
+    } catch (err) {
+      setLogoUploadError(err instanceof ApiError ? err.message : 'Failed to upload logo');
+    } finally {
+      setUploadingLogo(null);
+    }
+  }
+
   async function handleSaveRetention(e: FormEvent) {
     e.preventDefault();
     setSavingRetention(true);
@@ -337,6 +355,43 @@ export default function SettingsPage() {
             ) : !orgError ? (
               <p>Loading…</p>
             ) : null}
+
+            <h2 style={{ fontSize: 16, marginTop: 24 }}>Branding</h2>
+            <p style={{ color: 'var(--color-muted-foreground)', fontSize: 13, marginTop: 0 }}>
+              Shown in the sidebar. PNG, JPEG, SVG, or WebP, up to 2MB. Leave either one unset to use the default
+              O2N mark.
+            </p>
+            <div className="card" style={{ marginBottom: 24, display: 'flex', gap: 24 }}>
+              {logoUploadError ? <div className="error">{logoUploadError}</div> : null}
+              <div className="field" style={{ flex: 1 }}>
+                <label htmlFor="logo-light">Logo (light backgrounds)</label>
+                {organization?.logoLightUrl ? (
+                  <img src={organization.logoLightUrl} alt="Light logo" style={{ maxHeight: 40, marginBottom: 8, background: '#fff', padding: 4, borderRadius: 4 }} />
+                ) : null}
+                <input
+                  id="logo-light"
+                  type="file"
+                  accept="image/png,image/jpeg,image/svg+xml,image/webp"
+                  disabled={uploadingLogo !== null}
+                  onChange={(e) => handleUploadLogo('light', e.target.files?.[0])}
+                />
+                {uploadingLogo === 'light' ? <span className="muted" style={{ fontSize: 12 }}>Uploading…</span> : null}
+              </div>
+              <div className="field" style={{ flex: 1 }}>
+                <label htmlFor="logo-dark">Logo (dark backgrounds)</label>
+                {organization?.logoDarkUrl ? (
+                  <img src={organization.logoDarkUrl} alt="Dark logo" style={{ maxHeight: 40, marginBottom: 8 }} />
+                ) : null}
+                <input
+                  id="logo-dark"
+                  type="file"
+                  accept="image/png,image/jpeg,image/svg+xml,image/webp"
+                  disabled={uploadingLogo !== null}
+                  onChange={(e) => handleUploadLogo('dark', e.target.files?.[0])}
+                />
+                {uploadingLogo === 'dark' ? <span className="muted" style={{ fontSize: 12 }}>Uploading…</span> : null}
+              </div>
+            </div>
 
             <h2 style={{ fontSize: 16, marginTop: 24 }}>Governance</h2>
             <p style={{ color: 'var(--color-muted-foreground)', fontSize: 13, marginTop: 0 }}>

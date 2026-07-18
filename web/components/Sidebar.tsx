@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { clearSession, type Session } from '@/lib/api-client';
+import { api, clearSession, type Session } from '@/lib/api-client';
 
 interface NavLink {
   href: string;
@@ -43,6 +43,15 @@ export function Sidebar({ session }: { session: Session }) {
 
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  // RT-030 — branding logo, shown in place of the org name text when set.
+  const [logoUrl, setLogoUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    api
+      .getOrganization()
+      .then((org) => setLogoUrl(org.logoDarkUrl ?? org.logoLightUrl ?? null))
+      .catch(() => {}); // best-effort — the sidebar works fine with just the org name
+  }, []);
 
   // Desktop collapse state persists across visits; mobile drawer never does
   // (it always starts closed — a persisted "open" would just be a stuck
@@ -109,7 +118,13 @@ export function Sidebar({ session }: { session: Session }) {
 
       <aside className={`sidebar${mobileOpen ? ' sidebar-open' : ''}${collapsed ? ' sidebar-collapsed' : ''}`}>
         <div className="sidebar-header">
-          {!collapsed ? <strong>{session.organizationName}</strong> : null}
+          {!collapsed ? (
+            logoUrl ? (
+              <img src={logoUrl} alt={session.organizationName} style={{ maxHeight: 28, maxWidth: 140 }} />
+            ) : (
+              <strong>{session.organizationName}</strong>
+            )
+          ) : null}
           <button
             className="sidebar-collapse-toggle secondary"
             onClick={toggleCollapsed}

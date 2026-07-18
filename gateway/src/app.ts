@@ -1,6 +1,7 @@
 import Fastify, { type FastifyInstance } from 'fastify';
 import cors from '@fastify/cors';
 import formbody from '@fastify/formbody';
+import multipart from '@fastify/multipart';
 import swagger from '@fastify/swagger';
 import swaggerUi from '@fastify/swagger-ui';
 import type { AppContext } from './context.js';
@@ -47,6 +48,10 @@ export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
   // sends application/x-www-form-urlencoded, not JSON — the only route in
   // this gateway that needs it.
   await app.register(formbody);
+  // RT-030: branding logo upload (multipart/form-data), 2MB cap — a logo is
+  // never legitimately larger than that, and this bounds memory use since
+  // files are buffered in-memory before the S3 PutObject call.
+  await app.register(multipart, { limits: { fileSize: 2 * 1024 * 1024 } });
 
   // RT-074: static mode serves the hand-written spec at docs/spect/04_API/
   // 00-openapi-v0.1.yaml as-is — routes here use TS generics + inline Zod

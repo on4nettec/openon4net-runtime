@@ -13,6 +13,8 @@ interface OrgRow {
   activation_type: Organization['activationType'];
   max_users: number | null;
   language: string;
+  logo_light_url: string | null;
+  logo_dark_url: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -49,6 +51,8 @@ function toOrganization(row: OrgRow): Organization {
     activationType: row.activation_type,
     maxUsers: row.max_users,
     language: row.language,
+    logoLightUrl: row.logo_light_url,
+    logoDarkUrl: row.logo_dark_url,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -104,6 +108,32 @@ export class OrgService {
        WHERE id = $4
        RETURNING *`,
       [input.name ?? null, JSON.stringify(input.settings ?? {}), input.language ?? null, organizationId],
+    );
+    const row = rows[0];
+    if (!row) throw new NotFoundError('Organization', organizationId);
+    return toOrganization(row);
+  }
+
+  /**
+   * RT-030 — separate from update() since this is only ever called right
+   * after an S3 upload succeeds (routes/organizations.ts), one slot at a
+   * time. `undefined` means "leave this slot alone" (the other logo
+   * variant wasn't touched by this upload); there's no "clear the logo"
+   * action in this pass, so unlike update()'s COALESCE pattern this
+   * doesn't need to distinguish that from an explicit null.
+   */
+  async updateBranding(
+    organizationId: string,
+    input: { logoLightUrl?: string | undefined; logoDarkUrl?: string | undefined },
+  ): Promise<Organization> {
+    const { rows } = await this.db.query<OrgRow>(
+      `UPDATE organizations
+       SET logo_light_url = COALESCE($1, logo_light_url),
+           logo_dark_url = COALESCE($2, logo_dark_url),
+           updated_at = NOW()
+       WHERE id = $3
+       RETURNING *`,
+      [input.logoLightUrl ?? null, input.logoDarkUrl ?? null, organizationId],
     );
     const row = rows[0];
     if (!row) throw new NotFoundError('Organization', organizationId);

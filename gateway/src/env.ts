@@ -145,6 +145,21 @@ const EnvSchema = z
     BACKUP_INTERVAL_HOURS: z.coerce.number().int().positive().default(24),
     BACKUP_RETENTION_DAYS: z.coerce.number().int().positive().default(30),
 
+    // --- RT-030: object storage (branding logo upload), MinIO/S3-compatible.
+    // Optional: unset means POST /v1/organization/branding 400s with a clear
+    // "not configured" error instead of a hard crash — same "degrade
+    // gracefully" convention as SMTP/Marketplace/LOCALE_AI_API_KEY. ---
+    MINIO_ENDPOINT: z.string().min(1).optional(),
+    MINIO_PORT: z.coerce.number().int().positive().default(9000),
+    MINIO_USE_SSL: boolEnv(false),
+    MINIO_ROOT_USER: z.string().min(1).optional(),
+    MINIO_ROOT_PASSWORD: z.string().min(1).optional(),
+    MINIO_BUCKET: z.string().min(1).default('o2n-files'),
+    // Base URL branding image URLs are served from — the org's own reverse
+    // proxy in front of MinIO, since MinIO's own port usually isn't
+    // internet-facing. Falls back to a direct MinIO URL (fine for local dev).
+    MINIO_PUBLIC_URL: z.string().url().optional(),
+
     // --- RT-083: i18n — deliberately separate from LLM_API_KEY/LLM_PROVIDER
     // above (org-scoped BYOK chat), same reasoning Control Plane's CP-028
     // used: locale generation is a deployment-global, generate-once-and-
