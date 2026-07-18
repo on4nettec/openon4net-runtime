@@ -164,9 +164,17 @@ export class MemoryService {
     conversationId: string,
     input: { role: MessageRole; content: string; model?: string | null; costCents?: number; tokens?: number; metadata?: Record<string, unknown> },
   ): Promise<Message> {
+    // RT-084 — clock_timestamp(), not the column's own DEFAULT NOW(): NOW()
+    // is frozen to transaction-start time in Postgres, so two appendMessage
+    // calls inside the SAME transaction (persistTurn's 'thought' row
+    // immediately followed by the 'agent' row) would otherwise get an
+    // IDENTICAL created_at, leaving their relative order in
+    // `ORDER BY created_at` genuinely undefined. clock_timestamp() reads
+    // the real wall clock at each call, so sequential inserts always sort
+    // in the order they were actually made.
     const { rows } = await this.db.query<MessageRow>(
-      `INSERT INTO messages (conversation_id, role, content, model, cost_cents, tokens, metadata)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
+      `INSERT INTO messages (conversation_id, role, content, model, cost_cents, tokens, metadata, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, clock_timestamp())
        RETURNING *`,
       [
         conversationId,

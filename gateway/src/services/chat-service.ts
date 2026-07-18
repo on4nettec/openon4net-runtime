@@ -58,6 +58,9 @@ export type ChatOutcome = ChatSuccess | ChatRequiresApproval;
 
 export type ChatStreamEvent =
   | { type: 'token'; delta: string }
+  // RT-084 — a reasoning-trace chunk, distinct from the answer itself; the
+  // frontend renders these separately (see web/app/agents/[id]/chat).
+  | { type: 'reasoning'; delta: string }
   | { type: 'done'; conversationId: string; model: string; costCents: number; traceId: string; timeMs: number }
   | { type: 'requires_approval'; approvalId: string };
 
@@ -73,9 +76,10 @@ interface PreparedChat {
 
 type PrepareOutcome = { kind: 'ready'; prepared: PreparedChat } | { kind: 'requires_approval'; approvalId: string };
 
-function toLlmRole(role: 'user' | 'agent' | 'system' | 'tool'): 'user' | 'assistant' | 'system' | null {
+function toLlmRole(role: 'user' | 'agent' | 'system' | 'tool' | 'thought'): 'user' | 'assistant' | 'system' | null {
   if (role === 'agent') return 'assistant';
   if (role === 'tool') return null; // Sprint 0 has no tool-call history to replay
+  if (role === 'thought') return null; // RT-084 — a reasoning trace is not a prior conversation turn
   return role;
 }
 
@@ -209,10 +213,17 @@ export class ChatService {
     agentId: string,
     traceId: string,
     providerName: string,
-    result: { content: string; model: string; costCents: number; tokens: number },
+    result: { content: string; model: string; costCents: number; tokens: number; reasoning?: string },
   ): Promise<void> {
     await withTransaction(this.db, async (client) => {
-      await new MemoryService(client, this.redis, this.env.SHORT_MEMORY_TTL_SECONDS, this.embeddingService).appendMessage(conversationId, {
+      const memoryService = new MemoryService(client, this.redis, this.env.SHORT_MEMORY_TTL_SECONDS, this.embeddingService);
+      // RT-084 — written first so it lands immediately before the agent's
+      // answer in the conversation's created_at ordering, letting the
+      // frontend pair a 'thought' row with the 'agent' row that follows it.
+      if (result.reasoning) {
+        await memoryService.appendMessage(conversationId, { role: 'thought', content: result.reasoning });
+      }
+      await memoryService.appendMessage(conversationId, {
         role: 'agent',
         content: result.content,
         model: result.model,
@@ -284,6 +295,7 @@ export class ChatService {
         model: result.model,
         costCents,
         tokens: result.inputTokens + result.outputTokens,
+        ...(result.reasoning ? { reasoning: result.reasoning } : {}),
       },
     );
 
@@ -309,10 +321,16 @@ export class ChatService {
 
     const start = Date.now();
     let full = '';
+    let reasoning = '';
     try {
       for await (const chunk of new LlmService(llmProvider).stream({ model, messages: llmMessages })) {
-        full += chunk.delta;
-        yield { type: 'token', delta: chunk.delta };
+        if (chunk.isReasoning) {
+          reasoning += chunk.delta;
+          yield { type: 'reasoning', delta: chunk.delta };
+        } else {
+          full += chunk.delta;
+          yield { type: 'token', delta: chunk.delta };
+        }
       }
     } catch (err) {
       await new AuditService(this.db).logAction({
@@ -340,6 +358,7 @@ export class ChatService {
         model,
         costCents,
         tokens: Math.ceil((promptChars + full.length) / 4),
+        ...(reasoning ? { reasoning } : {}),
       },
     );
 

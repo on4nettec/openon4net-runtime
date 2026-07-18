@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import type { Agent, Conversation } from '@o2n/shared';
+import type { Agent, Conversation, Message } from '@o2n/shared';
 import { AGENT_ROLE_CATALOG } from '@o2n/shared';
 import { api, loadSession, streamChat, ApiError, type Session } from '@/lib/api-client';
 import { applyDocumentDirection, isRtlLanguage, useLocaleStrings } from '@/lib/i18n';
@@ -13,6 +13,32 @@ interface DisplayMessage {
   role: 'user' | 'agent';
   content: string;
   pending?: boolean;
+  /** RT-084 — the reasoning/thinking trace behind this specific agent turn, if one was captured. */
+  reasoning?: string;
+}
+
+/**
+ * RT-084 — a 'thought' row is always immediately followed by the 'agent'
+ * row it belongs to (chat-service.ts's persistTurn writes them in that
+ * order within the same transaction), so pairing by position is reliable.
+ * 'thought' rows are never rendered as their own bubble.
+ */
+function toDisplayMessages(history: Message[]): DisplayMessage[] {
+  const result: DisplayMessage[] = [];
+  let pendingReasoning: string | undefined;
+  for (const m of history) {
+    if (m.role === 'thought') {
+      pendingReasoning = m.content;
+    } else if (m.role === 'user' || m.role === 'agent') {
+      result.push({
+        role: m.role,
+        content: m.content,
+        ...(m.role === 'agent' && pendingReasoning ? { reasoning: pendingReasoning } : {}),
+      });
+      pendingReasoning = undefined;
+    }
+  }
+  return result;
 }
 
 interface AgentFile {
@@ -48,6 +74,17 @@ export default function AgentChatPage() {
   const [effectiveLanguage, setEffectiveLanguage] = useState('en');
   const t = useLocaleStrings(effectiveLanguage);
   const bottomRef = useRef<HTMLDivElement>(null);
+  // RT-084 — reasoning traces are collapsed by default (can be long/noisy);
+  // tracked per message index since messages re-render on every token.
+  const [expandedReasoning, setExpandedReasoning] = useState<Set<number>>(new Set());
+  function toggleReasoning(index: number) {
+    setExpandedReasoning((prev) => {
+      const next = new Set(prev);
+      if (next.has(index)) next.delete(index);
+      else next.add(index);
+      return next;
+    });
+  }
 
   // RT-025 — files attached to this agent's own workspace. RT-021 makes this
   // panel a persistent part of the 3-panel layout, not a toggle.
@@ -92,8 +129,7 @@ export default function AgentChatPage() {
     if (id === conversationId) return;
     try {
       const { messages: history } = await api.getConversationMessages(agentId, id);
-      const displayable = history.filter((m) => m.role === 'user' || m.role === 'agent');
-      setMessages(displayable.map((m) => ({ role: m.role as 'user' | 'agent', content: m.content })));
+      setMessages(toDisplayMessages(history));
       setConversationId(id);
       setNotice(null);
     } catch (err) {
@@ -202,8 +238,8 @@ export default function AgentChatPage() {
     const { conversation, messages: history } = await api.getLatestConversation(agentId);
     if (!conversation) return 0;
     setConversationId(conversation.id);
-    const displayable = history.filter((m) => m.role === 'user' || m.role === 'agent');
-    setMessages(displayable.map((m) => ({ role: m.role as 'user' | 'agent', content: m.content })));
+    const displayable = toDisplayMessages(history);
+    setMessages(displayable);
     return displayable.length;
   }
 
@@ -266,6 +302,14 @@ export default function AgentChatPage() {
             const next = [...prev];
             const last = next[next.length - 1];
             if (last?.role === 'agent') last.content += delta;
+            return next;
+          });
+        },
+        onReasoningToken: (delta) => {
+          setMessages((prev) => {
+            const next = [...prev];
+            const last = next[next.length - 1];
+            if (last?.role === 'agent') last.reasoning = (last.reasoning ?? '') + delta;
             return next;
           });
         },
@@ -463,16 +507,38 @@ export default function AgentChatPage() {
               <p style={{ color: 'var(--color-muted-foreground)' }}>Say hello to {agent?.name ?? 'your agent'} to start the conversation.</p>
             ) : null}
             {messages.map((m, i) => (
-              <div
-                key={i}
-                className="card"
-                style={{
-                  alignSelf: m.role === 'user' ? 'flex-end' : 'flex-start',
-                  maxWidth: '75%',
-                  background: m.role === 'user' ? 'var(--color-primary-subtle)' : 'var(--color-surface)',
-                }}
-              >
-                {m.content || (m.pending ? '…' : '')}
+              <div key={i} style={{ alignSelf: m.role === 'user' ? 'flex-end' : 'flex-start', maxWidth: '75%' }}>
+                {m.reasoning ? (
+                  // RT-084 — rendered as its own, visually distinct block
+                  // ABOVE the agent's bubble (not merged into it), matching
+                  // the "مستقل از پیام‌های عادی" requirement.
+                  <div
+                    className="card"
+                    style={{
+                      marginBottom: 6,
+                      fontSize: 12,
+                      fontStyle: 'italic',
+                      color: 'var(--color-muted-foreground)',
+                      background: 'transparent',
+                      border: '1px dashed var(--color-border)',
+                    }}
+                  >
+                    <button
+                      className="secondary"
+                      style={{ fontSize: 11, marginBottom: expandedReasoning.has(i) ? 6 : 0 }}
+                      onClick={() => toggleReasoning(i)}
+                    >
+                      {expandedReasoning.has(i) ? '🧠 Hide reasoning' : '🧠 Show reasoning'}
+                    </button>
+                    {expandedReasoning.has(i) ? <div>{m.reasoning}</div> : null}
+                  </div>
+                ) : null}
+                <div
+                  className="card"
+                  style={{ background: m.role === 'user' ? 'var(--color-primary-subtle)' : 'var(--color-surface)' }}
+                >
+                  {m.content || (m.pending ? '…' : '')}
+                </div>
               </div>
             ))}
             <div ref={bottomRef} />

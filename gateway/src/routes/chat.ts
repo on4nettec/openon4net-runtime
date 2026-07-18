@@ -80,6 +80,8 @@ export function registerChatRoutes(app: FastifyInstance, ctx: AppContext): void 
         })) {
           if (event.type === 'token') {
             reply.raw.write(`event: token\ndata: ${JSON.stringify({ delta: event.delta })}\n\n`);
+          } else if (event.type === 'reasoning') {
+            reply.raw.write(`event: reasoning\ndata: ${JSON.stringify({ delta: event.delta })}\n\n`);
           } else if (event.type === 'requires_approval') {
             reply.raw.write(
               `event: requires-approval\ndata: ${JSON.stringify({ approvalId: event.approvalId })}\n\n`,

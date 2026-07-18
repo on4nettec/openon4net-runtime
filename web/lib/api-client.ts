@@ -244,6 +244,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export interface StreamCallbacks {
   onToken: (delta: string) => void;
+  /** RT-084 — a reasoning-trace chunk, distinct from the answer itself. Optional: older callers just never see it. */
+  onReasoningToken?: (delta: string) => void;
   onDone: (info: { conversationId: string; model: string; costCents: number; traceId: string; timeMs: number }) => void;
   onRequiresApproval: (approvalId: string) => void;
   onError: (message: string) => void;
@@ -320,6 +322,8 @@ export async function streamChat(
 
         if (eventType === 'token') {
           callbacks.onToken((data as { delta: string }).delta);
+        } else if (eventType === 'reasoning') {
+          callbacks.onReasoningToken?.((data as { delta: string }).delta);
         } else if (eventType === 'done') {
           sawDone = true;
           callbacks.onDone(
