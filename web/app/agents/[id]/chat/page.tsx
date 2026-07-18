@@ -14,6 +14,20 @@ interface DisplayMessage {
   pending?: boolean;
 }
 
+interface AgentFile {
+  id: string;
+  filename: string;
+  contentType: string;
+  sizeBytes: number;
+  createdAt: string;
+}
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 export default function AgentChatPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
@@ -32,6 +46,52 @@ export default function AgentChatPage() {
   // physically mirrors, not just the text direction within a bubble.
   const [effectiveLanguage, setEffectiveLanguage] = useState('en');
   const bottomRef = useRef<HTMLDivElement>(null);
+
+  // RT-025 — files attached to this agent's own workspace.
+  const [showFiles, setShowFiles] = useState(false);
+  const [files, setFiles] = useState<AgentFile[]>([]);
+  const [filesError, setFilesError] = useState<string | null>(null);
+  const [uploadingFile, setUploadingFile] = useState(false);
+
+  function loadFiles() {
+    api
+      .listAgentFiles(agentId)
+      .then(setFiles)
+      .catch((err) => setFilesError(err instanceof ApiError ? err.message : 'Failed to load files'));
+  }
+
+  async function handleUploadFile(file: File | undefined) {
+    if (!file) return;
+    setUploadingFile(true);
+    setFilesError(null);
+    try {
+      await api.uploadAgentFile(agentId, file);
+      loadFiles();
+    } catch (err) {
+      setFilesError(err instanceof ApiError ? err.message : 'Failed to upload file');
+    } finally {
+      setUploadingFile(false);
+    }
+  }
+
+  async function handleDownloadFile(fileId: string) {
+    try {
+      const { url } = await api.getAgentFileDownloadUrl(agentId, fileId);
+      window.open(url, '_blank');
+    } catch (err) {
+      setFilesError(err instanceof ApiError ? err.message : 'Failed to get download link');
+    }
+  }
+
+  async function handleDeleteFile(fileId: string) {
+    if (!window.confirm('Delete this file?')) return;
+    try {
+      await api.deleteAgentFile(agentId, fileId);
+      loadFiles();
+    } catch (err) {
+      setFilesError(err instanceof ApiError ? err.message : 'Failed to delete file');
+    }
+  }
 
   function loadRateLimit() {
     api
@@ -178,44 +238,89 @@ export default function AgentChatPage() {
               {rateLimit.usedThisMinute}/{rateLimit.limitPerMinute} req/min
             </span>
           ) : null}
+          <button
+            className="secondary"
+            onClick={() => {
+              setShowFiles((v) => !v);
+              if (!showFiles) loadFiles();
+            }}
+          >
+            {showFiles ? 'Hide files' : 'Files'}
+          </button>
         </nav>
       </div>
 
-      <div className="page" style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 120px)' }}>
-        {notice ? <div className="error">{notice}</div> : null}
+      <div className="page" style={{ display: 'flex', gap: 16, height: 'calc(100vh - 120px)' }}>
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+          {notice ? <div className="error">{notice}</div> : null}
 
-        <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {messages.length === 0 ? (
-            <p style={{ color: 'var(--color-muted-foreground)' }}>Say hello to {agent?.name ?? 'your agent'} to start the conversation.</p>
-          ) : null}
-          {messages.map((m, i) => (
-            <div
-              key={i}
-              className="card"
-              style={{
-                alignSelf: m.role === 'user' ? 'flex-end' : 'flex-start',
-                maxWidth: '75%',
-                background: m.role === 'user' ? 'var(--color-primary-subtle)' : 'var(--color-surface)',
-              }}
-            >
-              {m.content || (m.pending ? '…' : '')}
-            </div>
-          ))}
-          <div ref={bottomRef} />
+          <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {messages.length === 0 ? (
+              <p style={{ color: 'var(--color-muted-foreground)' }}>Say hello to {agent?.name ?? 'your agent'} to start the conversation.</p>
+            ) : null}
+            {messages.map((m, i) => (
+              <div
+                key={i}
+                className="card"
+                style={{
+                  alignSelf: m.role === 'user' ? 'flex-end' : 'flex-start',
+                  maxWidth: '75%',
+                  background: m.role === 'user' ? 'var(--color-primary-subtle)' : 'var(--color-surface)',
+                }}
+              >
+                {m.content || (m.pending ? '…' : '')}
+              </div>
+            ))}
+            <div ref={bottomRef} />
+          </div>
+
+          <form onSubmit={handleSend} style={{ display: 'flex', gap: 8, marginTop: 14 }}>
+            <input
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              placeholder="Type a message…"
+              style={{ flex: 1 }}
+              disabled={sending}
+            />
+            <button type="submit" disabled={sending || !input.trim()}>
+              Send
+            </button>
+          </form>
         </div>
 
-        <form onSubmit={handleSend} style={{ display: 'flex', gap: 8, marginTop: 14 }}>
-          <input
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder="Type a message…"
-            style={{ flex: 1 }}
-            disabled={sending}
-          />
-          <button type="submit" disabled={sending || !input.trim()}>
-            Send
-          </button>
-        </form>
+        {showFiles ? (
+          <div className="card" style={{ width: 280, flexShrink: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <strong style={{ fontSize: 13 }}>Workspace files</strong>
+            {filesError ? <div className="error">{filesError}</div> : null}
+            {files.length === 0 ? (
+              <p className="muted" style={{ fontSize: 12, margin: 0 }}>No files yet.</p>
+            ) : (
+              files.map((f) => (
+                <div key={f.id} style={{ borderTop: '1px solid var(--color-border)', paddingTop: 8, fontSize: 12 }}>
+                  <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={f.filename}>
+                    {f.filename}
+                  </div>
+                  <div className="muted" style={{ fontSize: 11, marginBottom: 4 }}>{formatFileSize(f.sizeBytes)}</div>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <button className="secondary" onClick={() => handleDownloadFile(f.id)}>
+                      Download
+                    </button>
+                    <button className="secondary" onClick={() => handleDeleteFile(f.id)}>
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              ))
+            )}
+            <input
+              type="file"
+              disabled={uploadingFile}
+              onChange={(e) => handleUploadFile(e.target.files?.[0])}
+              style={{ marginTop: 8 }}
+            />
+            {uploadingFile ? <span className="muted" style={{ fontSize: 12 }}>Uploading…</span> : null}
+          </div>
+        ) : null}
       </div>
     </div>
   );

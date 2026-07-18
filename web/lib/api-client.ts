@@ -702,6 +702,46 @@ export const api = {
     return (await response.json()) as Organization;
   },
 
+  // RT-025 — per-agent workspace files.
+  listAgentFiles: (agentId: string) =>
+    request<
+      { id: string; workspaceId: string; filename: string; contentType: string; sizeBytes: number; createdAt: string }[]
+    >(`/v1/agents/${agentId}/files`),
+
+  getAgentFileDownloadUrl: (agentId: string, fileId: string) =>
+    request<{ url: string }>(`/v1/agents/${agentId}/files/${fileId}/download`),
+
+  deleteAgentFile: (agentId: string, fileId: string) =>
+    request<void>(`/v1/agents/${agentId}/files/${fileId}`, { method: 'DELETE' }),
+
+  uploadAgentFile: async (agentId: string, file: File) => {
+    const session = loadSession();
+    const form = new FormData();
+    form.set('file', file);
+    const headers = new Headers();
+    if (session) {
+      headers.set('Authorization', `Bearer ${session.token}`);
+      headers.set('X-Organization-Id', session.organizationId);
+    }
+    const response = await fetch(`${API_URL}/v1/agents/${agentId}/files`, { method: 'POST', body: form, headers });
+    if (!response.ok) {
+      const body = (await response.json().catch(() => null)) as ErrorEnvelope | null;
+      throw new ApiError(
+        body?.error.code ?? 'UNKNOWN_ERROR',
+        body?.error.message ?? `Upload failed with status ${response.status}`,
+        response.status,
+      );
+    }
+    return (await response.json()) as {
+      id: string;
+      workspaceId: string;
+      filename: string;
+      contentType: string;
+      sizeBytes: number;
+      createdAt: string;
+    };
+  },
+
   // RT-083 — i18n. getMe() also doubles as the first-login check: a null
   // language means the frontend should show the language picker before
   // continuing past login.

@@ -48,7 +48,7 @@ export function registerOrganizationRoutes(app: FastifyInstance, ctx: AppContext
     const buffer = await file.toBuffer();
     const extension = file.mimetype.split('/')[1] === 'svg+xml' ? 'svg' : file.mimetype.split('/')[1];
     const key = `branding/${request.auth.organizationId}/logo-${variant}.${extension}`;
-    const uploaded = await uploadFile(ctx.env, key, buffer, file.mimetype);
+    const uploaded = await uploadFile(ctx.env, key, buffer, file.mimetype, { public: true });
 
     const org = await orgService.updateBranding(
       request.auth.organizationId,
