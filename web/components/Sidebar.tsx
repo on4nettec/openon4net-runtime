@@ -15,6 +15,7 @@ interface NavLink {
 // as a collapsible/drawer sidebar instead of a top nav bar (user request,
 // 2026-07-18: "dashboard model", not a top bar).
 const NAV_LINKS: NavLink[] = [
+  { href: '/dashboard', label: 'Dashboard' },
   { href: '/agents', label: 'Agents' },
   { href: '/skills', label: 'Skills' },
   { href: '/skill-proposals', label: 'Skill Proposals' },
