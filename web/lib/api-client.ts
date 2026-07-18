@@ -765,6 +765,46 @@ export const api = {
     };
   },
 
+  // RT-077/RT-027 — self-hosted local Plugins, entirely bypassing Marketplace.
+  listLocalPlugins: () =>
+    request<
+      {
+        id: string;
+        name: string;
+        description: string | null;
+        category: string | null;
+        manifest: Record<string, unknown>;
+        createdAt: string;
+      }[]
+    >('/v1/plugins'),
+
+  deleteLocalPlugin: (id: string) => request<void>(`/v1/plugins/${id}`, { method: 'DELETE' }),
+
+  // RT-027 — upload the .zip of a plugin project scaffolded by
+  // create-o2n-plugin (has a manifest.json at its root) instead of typing
+  // JSON by hand.
+  uploadLocalPluginZip: async (file: File, category?: string) => {
+    const session = loadSession();
+    const form = new FormData();
+    form.set('file', file);
+    if (category) form.set('category', category);
+    const headers = new Headers();
+    if (session) {
+      headers.set('Authorization', `Bearer ${session.token}`);
+      headers.set('X-Organization-Id', session.organizationId);
+    }
+    const response = await fetch(`${API_URL}/v1/plugins/upload`, { method: 'POST', body: form, headers });
+    if (!response.ok) {
+      const body = (await response.json().catch(() => null)) as ErrorEnvelope | null;
+      throw new ApiError(
+        body?.error.code ?? 'UNKNOWN_ERROR',
+        body?.error.message ?? `Upload failed with status ${response.status}`,
+        response.status,
+      );
+    }
+    return (await response.json()) as { id: string; name: string };
+  },
+
   // RT-083 — i18n. getMe() also doubles as the first-login check: a null
   // language means the frontend should show the language picker before
   // continuing past login.

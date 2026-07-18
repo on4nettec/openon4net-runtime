@@ -13,6 +13,16 @@ import {
 } from '@/lib/api-client';
 import { Sidebar } from '@/components/Sidebar';
 
+interface LocalPlugin {
+  id: string;
+  name: string;
+  description: string | null;
+  category: string | null;
+  createdAt: string;
+}
+
+const PLUGIN_CATEGORIES = ['communication', 'productivity', 'data-analytics', 'devops', 'ai-ml', 'finance', 'other'];
+
 export default function MarketplacePage() {
   const router = useRouter();
   const [ready, setReady] = useState(false);
@@ -20,6 +30,12 @@ export default function MarketplacePage() {
   const [plugins, setPlugins] = useState<MarketplacePlugin[]>([]);
   const [skills, setSkills] = useState<MarketplaceSkillListing[]>([]);
   const [error, setError] = useState<string | null>(null);
+
+  // RT-027 — self-hosted local Plugins (bypasses Marketplace entirely).
+  const [localPlugins, setLocalPlugins] = useState<LocalPlugin[]>([]);
+  const [localPluginsError, setLocalPluginsError] = useState<string | null>(null);
+  const [uploadCategory, setUploadCategory] = useState('');
+  const [uploadingZip, setUploadingZip] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [installedPluginIds, setInstalledPluginIds] = useState<Set<string>>(new Set());
   const [installedSkillIds, setInstalledSkillIds] = useState<Set<string>>(new Set());
@@ -43,6 +59,13 @@ export default function MarketplacePage() {
       .catch((err) => setError(err instanceof ApiError ? err.message : 'Failed to load marketplace'));
   }
 
+  function loadLocalPlugins() {
+    api
+      .listLocalPlugins()
+      .then(setLocalPlugins)
+      .catch((err) => setLocalPluginsError(err instanceof ApiError ? err.message : 'Failed to load local plugins'));
+  }
+
   useEffect(() => {
     const s = loadSession();
     if (!s) {
@@ -52,7 +75,32 @@ export default function MarketplacePage() {
     setSession(s);
     setReady(true);
     void loadMarketplace();
+    loadLocalPlugins();
   }, [router]);
+
+  async function handleUploadZip(file: File | undefined) {
+    if (!file) return;
+    setUploadingZip(true);
+    setLocalPluginsError(null);
+    try {
+      await api.uploadLocalPluginZip(file, uploadCategory || undefined);
+      loadLocalPlugins();
+    } catch (err) {
+      setLocalPluginsError(err instanceof ApiError ? err.message : 'Failed to upload plugin');
+    } finally {
+      setUploadingZip(false);
+    }
+  }
+
+  async function handleDeleteLocalPlugin(id: string, name: string) {
+    if (!window.confirm(`Delete local plugin "${name}"?`)) return;
+    try {
+      await api.deleteLocalPlugin(id);
+      loadLocalPlugins();
+    } catch (err) {
+      setLocalPluginsError(err instanceof ApiError ? err.message : 'Failed to delete plugin');
+    }
+  }
 
   async function handleInstallPlugin(plugin: MarketplacePlugin, acknowledgePermissionDiff = false) {
     setBusyId(plugin.pluginId);
@@ -320,6 +368,65 @@ export default function MarketplacePage() {
                       </div>
                     );
                   })}
+                </div>
+              )}
+            </div>
+
+            <div className="card" style={{ marginTop: 16 }}>
+              <h2 style={{ fontSize: 16, marginTop: 0 }}>Self-hosted plugins</h2>
+              <p style={{ color: 'var(--color-muted-foreground)', fontSize: 12, marginTop: 0 }}>
+                Register your own plugin directly, bypassing Marketplace entirely. Upload the .zip of a project
+                scaffolded by <code>create-o2n-plugin</code> (it has a <code>manifest.json</code> at its root).
+              </p>
+              {localPluginsError ? <div className="error">{localPluginsError}</div> : null}
+
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 12 }}>
+                <select value={uploadCategory} onChange={(e) => setUploadCategory(e.target.value)}>
+                  <option value="">No category</option>
+                  {PLUGIN_CATEGORIES.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
+                <input
+                  type="file"
+                  accept=".zip"
+                  disabled={uploadingZip}
+                  onChange={(e) => handleUploadZip(e.target.files?.[0])}
+                />
+                {uploadingZip ? <span className="muted" style={{ fontSize: 12 }}>Uploading…</span> : null}
+              </div>
+
+              {localPlugins.length === 0 ? (
+                <p style={{ color: 'var(--color-muted-foreground)', margin: 0 }}>No self-hosted plugins yet.</p>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {localPlugins.map((p) => (
+                    <div
+                      key={p.id}
+                      style={{
+                        borderTop: '1px solid var(--color-border)',
+                        paddingTop: 8,
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                      }}
+                    >
+                      <div>
+                        <strong>{p.name}</strong>{' '}
+                        {p.category ? (
+                          <span style={{ color: 'var(--color-muted-foreground)', fontSize: 12 }}>({p.category})</span>
+                        ) : null}
+                        {p.description ? (
+                          <div style={{ color: 'var(--color-muted-foreground)', fontSize: 12 }}>{p.description}</div>
+                        ) : null}
+                      </div>
+                      <button className="secondary" onClick={() => handleDeleteLocalPlugin(p.id, p.name)}>
+                        Delete
+                      </button>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>
