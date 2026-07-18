@@ -248,7 +248,8 @@ export interface StreamCallbacks {
   onReasoningToken?: (delta: string) => void;
   /** RT-085 — the model decided to call a tool instead of (or before) answering. Optional: older callers just never see it. */
   onToolCall?: (name: string, args: Record<string, unknown>) => void;
-  onToolResult?: (name: string, result: unknown, error: string | undefined) => void;
+  /** RT-086 — delegatedTo is the other agent's name, set only when that agent (not this one) actually ran the skill. */
+  onToolResult?: (name: string, result: unknown, error: string | undefined, delegatedTo: string | undefined) => void;
   onDone: (info: { conversationId: string; model: string; costCents: number; traceId: string; timeMs: number }) => void;
   onRequiresApproval: (approvalId: string) => void;
   onError: (message: string) => void;
@@ -269,7 +270,7 @@ type ChatWsEvent =
   | { type: 'token'; delta: string }
   | { type: 'reasoning'; delta: string }
   | { type: 'tool_call'; name: string; arguments: Record<string, unknown> }
-  | { type: 'tool_result'; name: string; result?: unknown; error?: string }
+  | { type: 'tool_result'; name: string; result?: unknown; error?: string; delegatedTo?: string }
   | { type: 'done'; conversationId: string; model: string; costCents: number; traceId: string; timeMs: number }
   | { type: 'requires_approval'; approvalId: string }
   | { type: 'error'; message: string; traceId?: string };
@@ -334,7 +335,7 @@ export async function streamChat(
       } else if (data.type === 'tool_call') {
         callbacks.onToolCall?.(data.name, data.arguments);
       } else if (data.type === 'tool_result') {
-        callbacks.onToolResult?.(data.name, data.result, data.error);
+        callbacks.onToolResult?.(data.name, data.result, data.error, data.delegatedTo);
       } else if (data.type === 'done') {
         callbacks.onDone(data);
         socket.close();

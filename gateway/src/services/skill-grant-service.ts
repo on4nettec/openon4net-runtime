@@ -47,6 +47,28 @@ export class SkillGrantService {
     return rows.length > 0;
   }
 
+  /**
+   * RT-086 — the inverse of listForAgent(): given a skill, find another
+   * active agent in the same org that has it granted. Used for automatic
+   * delegation when the *calling* agent lacks the grant itself — picks the
+   * most-recently-granted match (arbitrary but deterministic tie-break;
+   * there's no notion of "best" delegate yet). Only ever queried within
+   * organizationId, so this can't leak a grant across tenants.
+   */
+  async findGrantedAgent(organizationId: string, skillId: string, excludeAgentId: string): Promise<{ agentId: string; agentName: string } | null> {
+    const { rows } = await this.db.query<{ agent_id: string; agent_name: string }>(
+      `SELECT g.agent_id, a.name AS agent_name
+       FROM agent_skill_grants g
+       JOIN agents a ON a.id = g.agent_id
+       WHERE g.skill_id = $1 AND a.organization_id = $2 AND a.id != $3 AND a.status = 'active'
+       ORDER BY g.created_at DESC
+       LIMIT 1`,
+      [skillId, organizationId, excludeAgentId],
+    );
+    const row = rows[0];
+    return row ? { agentId: row.agent_id, agentName: row.agent_name } : null;
+  }
+
   async grant(agentId: string, skillId: string, grantedByUserId: string): Promise<SkillGrant> {
     const { rows } = await this.db.query<GrantRow>(
       `INSERT INTO agent_skill_grants (agent_id, skill_id, granted_by_user_id)

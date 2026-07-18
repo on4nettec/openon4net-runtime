@@ -1,4 +1,5 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { AgentCreateSchema } from '@o2n/shared';
 import type { LlmCompletionRequest, LlmCompletionResult, LlmProvider, LlmStreamChunk } from '@o2n/llm-providers';
 import type { Db } from '../db.js';
 import type { RedisClient } from '../redis.js';
@@ -11,6 +12,11 @@ import { MemoryService } from './memory-service.js';
 import { PolicyService } from './policy-service.js';
 import { ProviderConfigService } from './provider-config-service.js';
 import { ChatService } from './chat-service.js';
+import { SkillService } from './skill-service.js';
+import { SkillGrantService } from './skill-grant-service.js';
+import { AgentService } from './agent-service.js';
+import { AgentMessageService } from './agent-message-service.js';
+import { buildSkillTools } from './agentic-tools.js';
 
 /**
  * RT-084 — reasoning-trace persistence: a real ProviderConfigService talks
@@ -39,6 +45,25 @@ function fakeProvider(result: LlmCompletionResult, streamChunks: LlmStreamChunk[
     },
     async *stream(): AsyncIterable<LlmStreamChunk> {
       for (const chunk of streamChunks) yield chunk;
+    },
+  };
+}
+
+/** Returns a fixed sequence of results, one per complete() call (repeating the last once exhausted), and records every request the loop sent. */
+function fakeSequencedProvider(results: LlmCompletionResult[]): LlmProvider & { calls: LlmCompletionRequest[] } {
+  const calls: LlmCompletionRequest[] = [];
+  let i = 0;
+  return {
+    name: 'fake',
+    calls,
+    async complete(req: LlmCompletionRequest): Promise<LlmCompletionResult> {
+      calls.push(req);
+      const result = results[Math.min(i, results.length - 1)]!;
+      i += 1;
+      return result;
+    },
+    async *stream(): AsyncIterable<LlmStreamChunk> {
+      throw new Error('not used by these tests');
     },
   };
 }
@@ -173,25 +198,6 @@ describe('ChatService — reasoning trace persistence (RT-084)', () => {
   });
 
   describe('RT-085 — agentic tool-calling loop', () => {
-    /** Returns a fixed sequence of results, one per complete() call (repeating the last once exhausted), and records every request the loop sent. */
-    function fakeSequencedProvider(results: LlmCompletionResult[]): LlmProvider & { calls: LlmCompletionRequest[] } {
-      const calls: LlmCompletionRequest[] = [];
-      let i = 0;
-      return {
-        name: 'fake',
-        calls,
-        async complete(req: LlmCompletionRequest): Promise<LlmCompletionResult> {
-          calls.push(req);
-          const result = results[Math.min(i, results.length - 1)]!;
-          i += 1;
-          return result;
-        },
-        async *stream(): AsyncIterable<LlmStreamChunk> {
-          throw new Error('not used by these tests');
-        },
-      };
-    }
-
     it('chat() executes a granted tool call end-to-end, persists a "tool" row, and returns the final answer', async () => {
       const fixture = await withFixture();
       const provider = fakeSequencedProvider([
@@ -387,6 +393,149 @@ describe('ChatService — reasoning trace persistence (RT-084)', () => {
       expect(outcome.response).toBe('Giving up on tools, here is my answer.');
       // 5 tool-decision rounds (MAX_TOOL_ITERATIONS) + 1 final forced round.
       expect(provider.calls).toHaveLength(6);
+    });
+  });
+
+  describe('RT-086 — automatic agent-to-agent delegation', () => {
+    /** A second agent in the same org/workspace as the fixture's own agent, to act as a delegate. */
+    async function createSecondAgent(fixture: TestFixture): Promise<{ id: string; name: string }> {
+      const name = `delegate-${Date.now()}`;
+      const input = AgentCreateSchema.parse({ name, role: 'tester', workspaceId: fixture.workspaceId });
+      const agent = await new AgentService(db).create(fixture.organizationId, input);
+      return { id: agent.id, name: agent.name };
+    }
+
+    async function createWebhookSkill(fixture: TestFixture, agentId: string) {
+      return new SkillService(db).create(fixture.organizationId, {
+        agentId,
+        name: 'Delegatable webhook skill',
+        definition: {
+          trigger: { type: 'manual' },
+          steps: [{ id: 'step-1', type: 'tool', tool: 'webhook-send', params: { url: 'https://postman-echo.com/post', payload: {} } }],
+        },
+      });
+    }
+
+    it('executes a Skill directly when the calling agent already has it granted', async () => {
+      const fixture = await withFixture();
+      const skill = await createWebhookSkill(fixture, fixture.agentId);
+      await new SkillGrantService(db).grant(fixture.agentId, skill.id, fixture.userId);
+      const { tools: [skillTool] } = buildSkillTools([skill]);
+
+      const provider = fakeSequencedProvider([
+        {
+          content: '',
+          model: 'fake-model',
+          inputTokens: 5,
+          outputTokens: 3,
+          toolCalls: [{ id: 'call_1', name: skillTool!.name, arguments: {} }],
+        },
+        { content: 'Ran the skill myself.', model: 'fake-model', inputTokens: 4, outputTokens: 3 },
+      ]);
+      const chatService = buildChatService(new FakeProviderConfigService(provider));
+
+      const outcome = await chatService.chat({
+        organizationId: fixture.organizationId,
+        userId: fixture.userId,
+        agentId: fixture.agentId,
+        message: 'run the webhook skill',
+        traceId: 'trace-delegate-1',
+      });
+
+      expect(outcome.kind).toBe('success');
+      if (outcome.kind !== 'success') throw new Error('expected success');
+      expect(outcome.response).toBe('Ran the skill myself.');
+
+      const memoryService = new MemoryService(db, redis, env.SHORT_MEMORY_TTL_SECONDS, new EmbeddingService(env));
+      const messages = await memoryService.getRecentMessages(outcome.conversationId, 10);
+      const toolRow = messages.find((m) => m.role === 'tool');
+      expect(toolRow?.metadata).not.toHaveProperty('delegatedTo');
+      expect(toolRow?.metadata).toMatchObject({ result: { succeeded: true, stepResults: [{ statusCode: 200 }] } });
+
+      const agentMessages = await new AgentMessageService(db).listForAgent(fixture.organizationId, fixture.agentId);
+      expect(agentMessages).toHaveLength(0);
+    });
+
+    it('automatically delegates to another agent that has the skill granted, when the calling agent lacks it', async () => {
+      const fixture = await withFixture();
+      const delegate = await createSecondAgent(fixture);
+      const skill = await createWebhookSkill(fixture, delegate.id);
+      await new SkillGrantService(db).grant(delegate.id, skill.id, fixture.userId);
+      const { tools: [skillTool] } = buildSkillTools([skill]);
+
+      const provider = fakeSequencedProvider([
+        {
+          content: '',
+          model: 'fake-model',
+          inputTokens: 5,
+          outputTokens: 3,
+          toolCalls: [{ id: 'call_1', name: skillTool!.name, arguments: {} }],
+        },
+        { content: 'Asked another agent to do it.', model: 'fake-model', inputTokens: 4, outputTokens: 3 },
+      ]);
+      const chatService = buildChatService(new FakeProviderConfigService(provider));
+
+      const outcome = await chatService.chat({
+        organizationId: fixture.organizationId,
+        userId: fixture.userId,
+        agentId: fixture.agentId,
+        message: 'run the webhook skill',
+        traceId: 'trace-delegate-2',
+      });
+
+      expect(outcome.kind).toBe('success');
+      if (outcome.kind !== 'success') throw new Error('expected success');
+      expect(outcome.response).toBe('Asked another agent to do it.');
+
+      const memoryService = new MemoryService(db, redis, env.SHORT_MEMORY_TTL_SECONDS, new EmbeddingService(env));
+      const messages = await memoryService.getRecentMessages(outcome.conversationId, 10);
+      const toolRow = messages.find((m) => m.role === 'tool');
+      expect(toolRow?.content).toContain(`delegated to ${delegate.name}`);
+      expect(toolRow?.metadata).toMatchObject({
+        delegatedTo: delegate.name,
+        result: { succeeded: true, stepResults: [{ statusCode: 200 }] },
+      });
+
+      const agentMessages = await new AgentMessageService(db).listForAgent(fixture.organizationId, delegate.id);
+      expect(agentMessages).toHaveLength(1);
+      expect(agentMessages[0]?.status).toBe('delivered');
+      expect(agentMessages[0]?.fromAgentId).toBe(fixture.agentId);
+      expect(agentMessages[0]?.content).toContain('Delegated skill execution');
+    });
+
+    it('returns a clear error when no agent in the org has the skill granted', async () => {
+      const fixture = await withFixture();
+      const skill = await createWebhookSkill(fixture, fixture.agentId);
+      // Deliberately never granted to any agent.
+      const { tools: [skillTool] } = buildSkillTools([skill]);
+
+      const provider = fakeSequencedProvider([
+        {
+          content: '',
+          model: 'fake-model',
+          inputTokens: 5,
+          outputTokens: 3,
+          toolCalls: [{ id: 'call_1', name: skillTool!.name, arguments: {} }],
+        },
+        { content: "Nobody can run that skill.", model: 'fake-model', inputTokens: 4, outputTokens: 3 },
+      ]);
+      const chatService = buildChatService(new FakeProviderConfigService(provider));
+
+      const outcome = await chatService.chat({
+        organizationId: fixture.organizationId,
+        userId: fixture.userId,
+        agentId: fixture.agentId,
+        message: 'run the webhook skill',
+        traceId: 'trace-delegate-3',
+      });
+
+      expect(outcome.kind).toBe('success');
+      if (outcome.kind !== 'success') throw new Error('expected success');
+      expect(outcome.response).toBe('Nobody can run that skill.');
+
+      const secondCallMessages = provider.calls[1]?.messages ?? [];
+      const toolResultMessage = secondCallMessages.find((m) => m.role === 'tool');
+      expect(toolResultMessage?.content).toContain('No agent in this organization has');
     });
   });
 });

@@ -9,12 +9,14 @@ import { api, loadSession, streamChat, ApiError, type Session } from '@/lib/api-
 import { applyDocumentDirection, isRtlLanguage, useLocaleStrings } from '@/lib/i18n';
 import { Sidebar } from '@/components/Sidebar';
 
-/** RT-085 — one tool call the model made this turn, either already resolved (from history) or still in flight (live stream). */
+/** RT-085/RT-086 — one tool call the model made this turn, either already resolved (from history) or still in flight (live stream). */
 interface DisplayToolCall {
   name: string;
   arguments: Record<string, unknown>;
   result?: unknown;
   error?: string;
+  /** RT-086 — set when another agent (not this one) actually ran the underlying skill. */
+  delegatedTo?: string;
 }
 
 interface DisplayMessage {
@@ -41,12 +43,19 @@ function toDisplayMessages(history: Message[]): DisplayMessage[] {
     if (m.role === 'thought') {
       pendingReasoning = m.content;
     } else if (m.role === 'tool') {
-      const meta = m.metadata as { name?: string; arguments?: Record<string, unknown>; result?: unknown; error?: string };
+      const meta = m.metadata as {
+        name?: string;
+        arguments?: Record<string, unknown>;
+        result?: unknown;
+        error?: string;
+        delegatedTo?: string;
+      };
       if (meta?.name) {
         pendingToolCalls.push({
           name: meta.name,
           arguments: meta.arguments ?? {},
           ...(meta.error !== undefined ? { error: meta.error } : { result: meta.result }),
+          ...(meta.delegatedTo !== undefined ? { delegatedTo: meta.delegatedTo } : {}),
         });
       }
     } else if (m.role === 'user' || m.role === 'agent') {
@@ -356,7 +365,7 @@ export default function AgentChatPage() {
             return next;
           });
         },
-        onToolResult: (name, result, error) => {
+        onToolResult: (name, result, error, delegatedTo) => {
           setMessages((prev) => {
             const next = [...prev];
             const last = next[next.length - 1];
@@ -368,6 +377,7 @@ export default function AgentChatPage() {
             if (call) {
               if (error !== undefined) call.error = error;
               else call.result = result;
+              if (delegatedTo !== undefined) call.delegatedTo = delegatedTo;
             }
             return next;
           });
@@ -618,7 +628,15 @@ export default function AgentChatPage() {
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                         {m.toolCalls.map((call, callIndex) => (
                           <div key={callIndex}>
-                            <div style={{ fontWeight: 600 }}>{call.name}</div>
+                            <div style={{ fontWeight: 600 }}>
+                              {call.name}
+                              {call.delegatedTo ? (
+                                <span className="muted" style={{ fontWeight: 400 }}>
+                                  {' '}
+                                  (delegated to {call.delegatedTo})
+                                </span>
+                              ) : null}
+                            </div>
                             <div className="muted">{JSON.stringify(call.arguments)}</div>
                             {call.error ? (
                               <div className="error">{call.error}</div>

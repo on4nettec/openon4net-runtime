@@ -26,8 +26,12 @@ import type { EmbeddingService } from './embedding-service.js';
 import type { PolicyService } from './policy-service.js';
 import { calculateCostCents, estimateCostCentsFromChars, estimatePromptCostCents } from './pricing.js';
 import { llmCostCentsTotal } from '../observability/metrics.js';
-import { buildAvailableTools, toolIdForFunctionName } from './agentic-tools.js';
+import { buildAvailableTools, buildSkillTools, toolIdForFunctionName } from './agentic-tools.js';
 import { executeTool } from './tool-dispatcher.js';
+import { executeSkill } from './skill-executor.js';
+import { SkillService } from './skill-service.js';
+import { SkillGrantService } from './skill-grant-service.js';
+import { AgentMessageService } from './agent-message-service.js';
 
 /** RT-085 — a chat turn's agentic loop never makes more than this many tool-decision round-trips; a model stuck re-calling tools forever must not hang the turn or run up unbounded cost. */
 const MAX_TOOL_ITERATIONS = 5;
@@ -37,6 +41,8 @@ interface ToolLogEntry {
   arguments: Record<string, unknown>;
   result?: unknown;
   error?: string;
+  /** RT-086 — set when this call was executed by another agent (this one lacked the skill grant) rather than the calling agent itself. */
+  delegatedTo?: string;
 }
 
 /** A chat-cost/policy approval that sits unresolved this long auto-expires (services/approval-expiry-scheduler.ts) — a stale request shouldn't silently execute if approved days later against now-stale context. */
@@ -84,7 +90,8 @@ export type ChatStreamEvent =
   | { type: 'reasoning'; delta: string }
   // RT-085 — the model decided to call a tool instead of answering yet.
   | { type: 'tool_call'; name: string; arguments: Record<string, unknown> }
-  | { type: 'tool_result'; name: string; result?: unknown; error?: string }
+  // RT-086 — delegatedTo is set when another agent (not this one) actually ran the skill.
+  | { type: 'tool_result'; name: string; result?: unknown; error?: string; delegatedTo?: string }
   | { type: 'done'; conversationId: string; model: string; costCents: number; traceId: string; timeMs: number }
   | { type: 'requires_approval'; approvalId: string };
 
@@ -96,8 +103,10 @@ interface PreparedChat {
   promptChars: number;
   llmProvider: LlmProvider;
   providerName: string;
-  /** RT-085 — undefined when the acting user has none of the gated tool permissions; see agentic-tools.ts. */
+  /** RT-085/RT-086 — undefined only when the acting user has none of the gated tool permissions AND the org has no active Skills at all; see agentic-tools.ts. */
   tools?: LlmToolDefinition[];
+  /** RT-086 — resolves a tool call's function name back to a Skill id; only Skill-backed tools appear here (the two RT-085 hardcoded tools use toolIdForFunctionName() instead). */
+  skillNameToId: Map<string, string>;
 }
 
 type PrepareOutcome = { kind: 'ready'; prepared: PreparedChat } | { kind: 'requires_approval'; approvalId: string };
@@ -115,6 +124,9 @@ export class ChatService {
   private agentAccessService: AgentAccessService;
   private userService: UserService;
   private contextBuilder: ContextBuilder;
+  private skillService: SkillService;
+  private skillGrantService: SkillGrantService;
+  private agentMessageService: AgentMessageService;
 
   constructor(
     private db: Db,
@@ -129,6 +141,9 @@ export class ChatService {
     this.agentAccessService = new AgentAccessService(db);
     this.userService = new UserService(db);
     this.contextBuilder = new ContextBuilder(db, this.memoryService);
+    this.skillService = new SkillService(db);
+    this.skillGrantService = new SkillGrantService(db);
+    this.agentMessageService = new AgentMessageService(db);
   }
 
   /**
@@ -225,11 +240,29 @@ export class ChatService {
         .filter((m): m is LlmMessage => m !== null),
     ];
     const promptChars = llmMessages.reduce((sum, m) => sum + m.content.length, 0);
-    const tools = buildAvailableTools(params.userPermissions ?? []);
+
+    // RT-085: two hardcoded tools, gated by the acting user's own RBAC
+    // permissions. RT-086: every active Skill in the org, regardless of
+    // whether *this* agent has it granted — the grant check (and automatic
+    // delegation when it's missing) happens at execution time, not here.
+    const hardcodedTools = buildAvailableTools(params.userPermissions ?? []) ?? [];
+    const orgSkills = await this.skillService.list(params.organizationId);
+    const { tools: skillTools, nameToSkillId: skillNameToId } = buildSkillTools(orgSkills);
+    const allTools = [...hardcodedTools, ...skillTools];
 
     return {
       kind: 'ready',
-      prepared: { agent, conversation, llmMessages, model, promptChars, llmProvider, providerName, ...(tools ? { tools } : {}) },
+      prepared: {
+        agent,
+        conversation,
+        llmMessages,
+        model,
+        promptChars,
+        llmProvider,
+        providerName,
+        skillNameToId,
+        ...(allTools.length > 0 ? { tools: allTools } : {}),
+      },
     };
   }
 
@@ -250,10 +283,16 @@ export class ChatService {
       // 'tool' rows are never replayed as prior-turn LLM history
       // (toLlmRole() returns null for them) — same treatment as 'thought'.
       for (const entry of toolLog) {
+        const delegationSuffix = entry.delegatedTo ? ` (delegated to ${entry.delegatedTo})` : '';
         await memoryService.appendMessage(conversationId, {
           role: 'tool',
-          content: entry.error ? `${entry.name} failed: ${entry.error}` : `Called ${entry.name}`,
-          metadata: { name: entry.name, arguments: entry.arguments, ...(entry.error ? { error: entry.error } : { result: entry.result }) },
+          content: (entry.error ? `${entry.name} failed: ${entry.error}` : `Called ${entry.name}`) + delegationSuffix,
+          metadata: {
+            name: entry.name,
+            arguments: entry.arguments,
+            ...(entry.error ? { error: entry.error } : { result: entry.result }),
+            ...(entry.delegatedTo ? { delegatedTo: entry.delegatedTo } : {}),
+          },
         });
       }
       // RT-084 — written next so it lands immediately before the agent's
@@ -343,6 +382,7 @@ export class ChatService {
     tools: LlmToolDefinition[] | undefined,
     params: ChatParams,
     agentId: string,
+    skillNameToId: Map<string, string>,
   ): AsyncGenerator<
     ChatStreamEvent,
     { result: LlmCompletionResult; toolLog: ToolLogEntry[]; totalInputTokens: number; totalOutputTokens: number },
@@ -372,11 +412,10 @@ export class ChatService {
 
       for (const call of result.toolCalls) {
         const toolId = toolIdForFunctionName(call.name);
+        const skillId = skillNameToId.get(call.name);
         let entry: ToolLogEntry;
 
-        if (!toolId) {
-          entry = { name: call.name, arguments: call.arguments, error: `Unknown tool: ${call.name}` };
-        } else {
+        if (toolId) {
           const actionType = toolId === 'telegram-send' ? 'tool-telegram-send' : 'tool-webhook-send';
           const policyResult = await this.policyService.evaluate(params.organizationId, {
             estimatedCostCents: 0,
@@ -396,13 +435,17 @@ export class ChatService {
               entry = { name: call.name, arguments: call.arguments, error: err instanceof O2NError ? err.message : 'Tool execution failed' };
             }
           }
+        } else if (skillId) {
+          entry = await this.runSkillCall(params.organizationId, agentId, skillId, call.name, call.arguments);
+        } else {
+          entry = { name: call.name, arguments: call.arguments, error: `Unknown tool: ${call.name}` };
         }
 
         toolLog.push(entry);
         yield { type: 'tool_call', name: entry.name, arguments: entry.arguments };
         yield entry.error
-          ? { type: 'tool_result', name: entry.name, error: entry.error }
-          : { type: 'tool_result', name: entry.name, result: entry.result };
+          ? { type: 'tool_result', name: entry.name, error: entry.error, ...(entry.delegatedTo ? { delegatedTo: entry.delegatedTo } : {}) }
+          : { type: 'tool_result', name: entry.name, result: entry.result, ...(entry.delegatedTo ? { delegatedTo: entry.delegatedTo } : {}) };
         messages.push({ role: 'tool', content: JSON.stringify(entry.error ? { error: entry.error } : entry.result), toolCallId: call.id });
       }
     }
@@ -415,16 +458,69 @@ export class ChatService {
     return { result: finalResult, toolLog, totalInputTokens, totalOutputTokens };
   }
 
+  /**
+   * RT-086 — runs a Skill the model asked for, executing it on this agent
+   * directly if it has the grant, or automatically delegating to another
+   * agent in the org that does. Delegation is recorded as a real
+   * `agent_messages` row (from this agent, to the delegate) so it shows up
+   * in the delegate's inbox and the audit trail — even though the actual
+   * work happens synchronously here (not via the scheduler's async
+   * fire-and-forget chat() delivery), since the caller needs the result
+   * back to continue this same turn.
+   */
+  private async runSkillCall(
+    organizationId: string,
+    callingAgentId: string,
+    skillId: string,
+    callName: string,
+    args: Record<string, unknown>,
+  ): Promise<ToolLogEntry> {
+    const hasGrant = await this.skillGrantService.hasGrant(callingAgentId, skillId);
+    if (hasGrant) {
+      try {
+        const result = await executeSkill(this.db, this.env, organizationId, callingAgentId, skillId, args);
+        return { name: callName, arguments: args, result };
+      } catch (err) {
+        return { name: callName, arguments: args, error: err instanceof O2NError ? err.message : 'Skill execution failed' };
+      }
+    }
+
+    const delegate = await this.skillGrantService.findGrantedAgent(organizationId, skillId, callingAgentId);
+    if (!delegate) {
+      return { name: callName, arguments: args, error: `No agent in this organization has the "${callName}" skill granted.` };
+    }
+
+    const message = await this.agentMessageService.send(
+      organizationId,
+      delegate.agentId,
+      `Delegated skill execution: "${callName}" (this agent isn't granted it; ${delegate.agentName} is).`,
+      callingAgentId,
+    );
+    try {
+      const result = await executeSkill(this.db, this.env, organizationId, delegate.agentId, skillId, args);
+      await this.agentMessageService.markDelivered(message.id);
+      return { name: callName, arguments: args, result, delegatedTo: delegate.agentName };
+    } catch (err) {
+      await this.agentMessageService.markFailed(message.id);
+      return {
+        name: callName,
+        arguments: args,
+        error: err instanceof O2NError ? err.message : 'Skill execution failed',
+        delegatedTo: delegate.agentName,
+      };
+    }
+  }
+
   async chat(params: ChatParams, skipApprovalGate = false): Promise<ChatOutcome> {
     const outcome = await this.prepare(params, skipApprovalGate);
     if (outcome.kind === 'requires_approval') return outcome;
-    const { agent, conversation, llmMessages, model, llmProvider, providerName, tools } = outcome.prepared;
+    const { agent, conversation, llmMessages, model, llmProvider, providerName, tools, skillNameToId } = outcome.prepared;
 
     // RT-085 — drain the loop's yielded tool_call/tool_result events without
     // exposing them in ChatOutcome's JSON shape (out of scope for the
     // non-streaming response for now); they're still visible afterward via
     // the persisted 'tool' conversation rows either way.
-    const loop = this.runToolLoop(llmMessages, model, llmProvider, tools, params, agent.id);
+    const loop = this.runToolLoop(llmMessages, model, llmProvider, tools, params, agent.id, skillNameToId);
     let step = await loop.next();
     while (!step.done) step = await loop.next();
     const { result, toolLog, totalInputTokens, totalOutputTokens } = step.value;
@@ -466,7 +562,7 @@ export class ChatService {
       yield { type: 'requires_approval', approvalId: outcome.approvalId };
       return;
     }
-    const { agent, conversation, llmMessages, model, promptChars, llmProvider, providerName, tools } = outcome.prepared;
+    const { agent, conversation, llmMessages, model, promptChars, llmProvider, providerName, tools, skillNameToId } = outcome.prepared;
 
     const start = Date.now();
     let full = '';
@@ -486,7 +582,7 @@ export class ChatService {
       // provider call just to get per-token delivery of the same text.
       let result: LlmCompletionResult;
       try {
-        const loopResult = yield* this.runToolLoop(llmMessages, model, llmProvider, tools, params, agent.id);
+        const loopResult = yield* this.runToolLoop(llmMessages, model, llmProvider, tools, params, agent.id, skillNameToId);
         result = loopResult.result;
         toolLog = loopResult.toolLog;
       } catch (err) {

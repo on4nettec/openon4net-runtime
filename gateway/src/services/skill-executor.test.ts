@@ -44,7 +44,7 @@ describe('executeSkill', () => {
         },
       });
 
-      const result = await executeSkill(ctx, fixture.organizationId, fixture.agentId, skill.id, {});
+      const result = await executeSkill(ctx.db, ctx.env, fixture.organizationId, fixture.agentId, skill.id, {});
       expect(result.succeeded).toBe(true);
       expect(result.stepResults).toHaveLength(1);
 
@@ -68,7 +68,7 @@ describe('executeSkill', () => {
       },
     });
 
-    await expect(executeSkill(ctx, fixture.organizationId, fixture.agentId, skill.id, {})).rejects.toThrow();
+    await expect(executeSkill(ctx.db, ctx.env, fixture.organizationId, fixture.agentId, skill.id, {})).rejects.toThrow();
 
     const refreshed = await skillService.getById(fixture.organizationId, skill.id);
     expect(refreshed.executionCount).toBe(1);
@@ -87,7 +87,7 @@ describe('executeSkill', () => {
       },
     });
 
-    const result = await executeSkill(ctx, fixture.organizationId, fixture.agentId, skill.id, { payload: { a: 2 } });
+    const result = await executeSkill(ctx.db, ctx.env, fixture.organizationId, fixture.agentId, skill.id, { payload: { a: 2 } });
     expect(result.succeeded).toBe(true);
   }, 15000);
 });

@@ -1,4 +1,5 @@
-import type { AppContext } from '../context.js';
+import type { Db } from '../db.js';
+import type { Env } from '../env.js';
 import { SkillService } from './skill-service.js';
 import { AuditService } from './audit-service.js';
 import { executeTool } from './tool-dispatcher.js';
@@ -16,16 +17,22 @@ export interface SkillExecutionResult {
  * through tool-dispatcher.ts. Reuses each step's own tool-level permission
  * surface — a Skill only replays actions the executing agent could already
  * do directly, one at a time, so no new escalation path is introduced.
+ *
+ * Takes `Db`/`Env` rather than the full `AppContext` (RT-086, same
+ * narrowing as tool-dispatcher.ts's executeTool() in RT-085) — lets
+ * chat-service.ts's agentic loop call this directly (including on behalf
+ * of a delegate agent) without needing a full AppContext.
  */
 export async function executeSkill(
-  ctx: AppContext,
+  db: Db,
+  env: Env,
   organizationId: string,
   agentId: string,
   skillId: string,
   params: Record<string, unknown>,
 ): Promise<SkillExecutionResult> {
-  const skillService = new SkillService(ctx.db);
-  const auditService = new AuditService(ctx.db);
+  const skillService = new SkillService(db);
+  const auditService = new AuditService(db);
   const skill = await skillService.getById(organizationId, skillId);
 
   const start = Date.now();
@@ -36,7 +43,7 @@ export async function executeSkill(
       // skill definition's own step defaults, so a stored skill can still
       // take a dynamic value (e.g. a different chatId) at run time.
       const mergedParams = { ...step.params, ...params };
-      const result = await executeTool({ ...step, params: mergedParams }, ctx.env);
+      const result = await executeTool({ ...step, params: mergedParams }, env);
       stepResults.push(result);
     }
 

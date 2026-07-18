@@ -156,6 +156,6 @@ export function registerSkillRoutes(app: FastifyInstance, ctx: AppContext): void
     const hasGrant = await skillGrantService.hasGrant(request.params.id, request.params.skillId);
     if (!hasGrant) throw new ValidationError('This agent has not been granted this skill');
 
-    return executeSkill(ctx, request.auth.organizationId, request.params.id, request.params.skillId, parsed.data.params);
+    return executeSkill(ctx.db, ctx.env, request.auth.organizationId, request.params.id, request.params.skillId, parsed.data.params);
   });
 }
