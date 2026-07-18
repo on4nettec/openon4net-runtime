@@ -450,7 +450,7 @@ export const api = {
       rateLimitPerMinute: number;
     }>('/v1/config'),
 
-  updateConfig: (input: { provider: string; model: string; apiKey: string; baseUrl?: string | undefined }) =>
+  updateConfig: (input: { provider: string; model: string; apiKey?: string | undefined; baseUrl?: string | undefined }) =>
     request<{
       provider: string;
       model: string;
@@ -458,6 +458,11 @@ export const api = {
       baseUrl: string | null;
       source: 'database' | 'env';
     }>('/v1/config', { method: 'PUT', body: JSON.stringify(input) }),
+
+  getModels: (provider: string, baseUrl?: string) =>
+    request<{ models: string[] }>(
+      `/v1/config/models?provider=${encodeURIComponent(provider)}${baseUrl ? `&baseUrl=${encodeURIComponent(baseUrl)}` : ''}`,
+    ),
 
   testConnection: () =>
     request<{ success: boolean; model?: string; error?: string; responseTimeMs: number }>(

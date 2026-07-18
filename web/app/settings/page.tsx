@@ -78,6 +78,21 @@ export default function SettingsPage() {
   const [baseUrl, setBaseUrl] = useState('');
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  // RT-089 — real model list instead of free text; empty means either still
+  // loading or the fetch came back empty (custom baseUrl, unknown ollama
+  // models, ...), in which case the UI falls back to manual entry.
+  const [availableModels, setAvailableModels] = useState<string[]>([]);
+  const [modelsLoading, setModelsLoading] = useState(false);
+
+  useEffect(() => {
+    if (!editing) return;
+    setModelsLoading(true);
+    api
+      .getModels(provider, provider === 'ollama' ? baseUrl.trim() || undefined : undefined)
+      .then((res) => setAvailableModels(res.models))
+      .catch(() => setAvailableModels([]))
+      .finally(() => setModelsLoading(false));
+  }, [editing, provider, baseUrl]);
 
   function loadConfig() {
     return api
@@ -256,7 +271,7 @@ export default function SettingsPage() {
       await api.updateConfig({
         provider,
         model,
-        apiKey,
+        apiKey: apiKey.trim() ? apiKey.trim() : undefined,
         baseUrl: baseUrl.trim() ? baseUrl.trim() : undefined,
       });
       setApiKey('');
@@ -560,16 +575,41 @@ export default function SettingsPage() {
                 </label>
                 <label>
                   Model
-                  <input value={model} onChange={(e) => setModel(e.target.value)} placeholder="e.g. claude-sonnet-5" required />
+                  {availableModels.length > 0 ? (
+                    <select value={model} onChange={(e) => setModel(e.target.value)}>
+                      <option value="">Select a model…</option>
+                      {availableModels.map((m) => (
+                        <option key={m} value={m}>
+                          {m}
+                        </option>
+                      ))}
+                      <option value="__other__">Other (type manually)…</option>
+                    </select>
+                  ) : (
+                    <input
+                      value={model}
+                      onChange={(e) => setModel(e.target.value)}
+                      placeholder={modelsLoading ? 'Loading models…' : 'e.g. claude-3-5-sonnet-20241022'}
+                      required
+                    />
+                  )}
+                  {availableModels.length > 0 && model === '__other__' ? (
+                    <input
+                      value=""
+                      onChange={(e) => setModel(e.target.value)}
+                      placeholder="Custom model name"
+                      style={{ marginTop: 6 }}
+                    />
+                  ) : null}
                 </label>
                 <label>
-                  API key
+                  API key {provider === 'ollama' ? '(not required for ollama)' : ''}
                   <input
                     type="password"
                     value={apiKey}
                     onChange={(e) => setApiKey(e.target.value)}
-                    placeholder="Enter new key to set/replace it"
-                    required
+                    placeholder={provider === 'ollama' ? 'Not needed for a local ollama instance' : 'Enter new key to set/replace it'}
+                    required={provider !== 'ollama'}
                   />
                 </label>
                 <label>

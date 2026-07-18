@@ -24,7 +24,10 @@ export interface EffectiveConfig {
 export interface SetConfigInput {
   provider: SupportedProvider;
   model: string;
-  apiKey: string;
+  // RT-089 — optional for ollama (LlmConfigSetSchema enforces "required
+  // unless ollama" upstream); falls back to the same 'ollama' placeholder
+  // registry.ts's own getProvider() comment recommends.
+  apiKey?: string | undefined;
   baseUrl?: string | undefined;
 }
 
@@ -98,7 +101,8 @@ export class ProviderConfigService {
     if (!SUPPORTED_PROVIDERS.includes(input.provider)) {
       throw new ValidationError(`Unsupported provider: ${input.provider}`);
     }
-    const encrypted = encryptSecret(input.apiKey, this.env.CONFIG_ENCRYPTION_KEY);
+    const apiKey = input.apiKey || (input.provider === 'ollama' ? 'ollama' : '');
+    const encrypted = encryptSecret(apiKey, this.env.CONFIG_ENCRYPTION_KEY);
     await this.db.query(
       `INSERT INTO llm_configs (organization_id, provider, model, api_key_encrypted, base_url, updated_by, updated_at)
        VALUES ($1, $2, $3, $4, $5, $6, NOW())
