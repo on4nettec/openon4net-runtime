@@ -132,6 +132,27 @@ export interface SkillGrant {
   createdAt: string;
 }
 
+/** RT-087 — Agent Skills open standard (agentskills.io), v1 instructions-only scope. Additive alongside Skill/SkillDefinition above, not a replacement. */
+export interface SkillPackage {
+  id: string;
+  agentId: string | null;
+  organizationId: string;
+  name: string;
+  description: string;
+  instructions: string;
+  status: 'active' | 'inactive';
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SkillPackageGrant {
+  id: string;
+  agentId: string;
+  skillPackageId: string;
+  grantedByUserId: string | null;
+  createdAt: string;
+}
+
 export interface SkillProposal {
   id: string;
   agentId: string;
@@ -642,6 +663,25 @@ export const api = {
       `/v1/agents/${agentId}/skills/${skillId}/execute`,
       { method: 'POST', body: JSON.stringify({ params }) },
     ),
+
+  // RT-087 — Agent Skills open standard, v1 instructions-only scope.
+  listSkillPackages: () => request<SkillPackage[]>('/v1/skill-packages'),
+
+  createSkillPackage: (input: { agentId?: string; name: string; description: string; instructions: string }) =>
+    request<SkillPackage>('/v1/skill-packages', { method: 'POST', body: JSON.stringify(input) }),
+
+  importSkillPackage: (input: { agentId?: string; markdown: string }) =>
+    request<SkillPackage>('/v1/skill-packages/import', { method: 'POST', body: JSON.stringify(input) }),
+
+  deleteSkillPackage: (id: string) => request<void>(`/v1/skill-packages/${id}`, { method: 'DELETE' }),
+
+  listAgentSkillPackageGrants: (agentId: string) => request<SkillPackageGrant[]>(`/v1/agents/${agentId}/skill-packages`),
+
+  grantSkillPackage: (agentId: string, skillPackageId: string) =>
+    request<SkillPackageGrant>(`/v1/agents/${agentId}/skill-packages/${skillPackageId}/grant`, { method: 'POST' }),
+
+  revokeSkillPackage: (agentId: string, skillPackageId: string) =>
+    request<void>(`/v1/agents/${agentId}/skill-packages/${skillPackageId}/grant`, { method: 'DELETE' }),
 
   listSkillProposals: () => request<SkillProposal[]>('/v1/skill-proposals'),
 

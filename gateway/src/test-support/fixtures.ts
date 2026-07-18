@@ -57,6 +57,10 @@ export async function cleanupTestFixture(db: Db, organizationId: string): Promis
   ); // cascades messages
   await db.query(`DELETE FROM skill_proposals WHERE organization_id = $1`, [organizationId]);
   await db.query(`DELETE FROM skills WHERE organization_id = $1`, [organizationId]);
+  // RT-087 — agent_skill_packages.organization_id has no ON DELETE CASCADE
+  // either (same reasoning as `skills` above); its own grants table cascades
+  // from agent_skill_packages, so deleting the package rows is enough.
+  await db.query(`DELETE FROM agent_skill_packages WHERE organization_id = $1`, [organizationId]);
   // workflows.created_by_user_id / webhook_endpoints.created_by_user_id /
   // agent_plugin_grants.granted_by_user_id / local_plugins.created_by_user_id
   // have no ON DELETE CASCADE, so all four must go before users.

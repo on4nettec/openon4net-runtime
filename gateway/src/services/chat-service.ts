@@ -26,12 +26,13 @@ import type { EmbeddingService } from './embedding-service.js';
 import type { PolicyService } from './policy-service.js';
 import { calculateCostCents, estimateCostCentsFromChars, estimatePromptCostCents } from './pricing.js';
 import { llmCostCentsTotal } from '../observability/metrics.js';
-import { buildAvailableTools, buildSkillTools, toolIdForFunctionName } from './agentic-tools.js';
+import { buildAvailableTools, buildSkillTools, buildSkillPackageTools, toolIdForFunctionName } from './agentic-tools.js';
 import { executeTool } from './tool-dispatcher.js';
 import { executeSkill } from './skill-executor.js';
 import { SkillService } from './skill-service.js';
 import { SkillGrantService } from './skill-grant-service.js';
 import { AgentMessageService } from './agent-message-service.js';
+import { SkillPackageService } from './skill-package-service.js';
 
 /** RT-085 — a chat turn's agentic loop never makes more than this many tool-decision round-trips; a model stuck re-calling tools forever must not hang the turn or run up unbounded cost. */
 const MAX_TOOL_ITERATIONS = 5;
@@ -103,10 +104,12 @@ interface PreparedChat {
   promptChars: number;
   llmProvider: LlmProvider;
   providerName: string;
-  /** RT-085/RT-086 — undefined only when the acting user has none of the gated tool permissions AND the org has no active Skills at all; see agentic-tools.ts. */
+  /** RT-085/RT-086/RT-087 — undefined only when the acting user has none of the gated tool permissions AND the org has no active Skills AND this agent has no granted skill packages; see agentic-tools.ts. */
   tools?: LlmToolDefinition[];
   /** RT-086 — resolves a tool call's function name back to a Skill id; only Skill-backed tools appear here (the two RT-085 hardcoded tools use toolIdForFunctionName() instead). */
   skillNameToId: Map<string, string>;
+  /** RT-087 — resolves a tool call's function name back to a granted skill-package id (agentskills.io "read" tools). */
+  packageNameToId: Map<string, string>;
 }
 
 type PrepareOutcome = { kind: 'ready'; prepared: PreparedChat } | { kind: 'requires_approval'; approvalId: string };
@@ -127,6 +130,7 @@ export class ChatService {
   private skillService: SkillService;
   private skillGrantService: SkillGrantService;
   private agentMessageService: AgentMessageService;
+  private skillPackageService: SkillPackageService;
 
   constructor(
     private db: Db,
@@ -144,6 +148,7 @@ export class ChatService {
     this.skillService = new SkillService(db);
     this.skillGrantService = new SkillGrantService(db);
     this.agentMessageService = new AgentMessageService(db);
+    this.skillPackageService = new SkillPackageService(db);
   }
 
   /**
@@ -245,10 +250,16 @@ export class ChatService {
     // permissions. RT-086: every active Skill in the org, regardless of
     // whether *this* agent has it granted — the grant check (and automatic
     // delegation when it's missing) happens at execution time, not here.
+    // RT-087: skill packages (agentskills.io) already granted to *this*
+    // agent specifically — no delegation concept for pure documentation, so
+    // gating at advertisement time (not execution time) is simpler and
+    // equally correct.
     const hardcodedTools = buildAvailableTools(params.userPermissions ?? []) ?? [];
     const orgSkills = await this.skillService.list(params.organizationId);
     const { tools: skillTools, nameToSkillId: skillNameToId } = buildSkillTools(orgSkills);
-    const allTools = [...hardcodedTools, ...skillTools];
+    const grantedPackages = await this.skillPackageService.listGrantedForAgent(params.organizationId, params.agentId);
+    const { tools: packageTools, nameToPackageId: packageNameToId } = buildSkillPackageTools(grantedPackages);
+    const allTools = [...hardcodedTools, ...skillTools, ...packageTools];
 
     return {
       kind: 'ready',
@@ -261,6 +272,7 @@ export class ChatService {
         llmProvider,
         providerName,
         skillNameToId,
+        packageNameToId,
         ...(allTools.length > 0 ? { tools: allTools } : {}),
       },
     };
@@ -383,6 +395,7 @@ export class ChatService {
     params: ChatParams,
     agentId: string,
     skillNameToId: Map<string, string>,
+    packageNameToId: Map<string, string>,
   ): AsyncGenerator<
     ChatStreamEvent,
     { result: LlmCompletionResult; toolLog: ToolLogEntry[]; totalInputTokens: number; totalOutputTokens: number },
@@ -413,6 +426,7 @@ export class ChatService {
       for (const call of result.toolCalls) {
         const toolId = toolIdForFunctionName(call.name);
         const skillId = skillNameToId.get(call.name);
+        const packageId = packageNameToId.get(call.name);
         let entry: ToolLogEntry;
 
         if (toolId) {
@@ -437,6 +451,8 @@ export class ChatService {
           }
         } else if (skillId) {
           entry = await this.runSkillCall(params.organizationId, agentId, skillId, call.name, call.arguments);
+        } else if (packageId) {
+          entry = await this.runSkillPackageRead(params.organizationId, packageId, call.name, call.arguments);
         } else {
           entry = { name: call.name, arguments: call.arguments, error: `Unknown tool: ${call.name}` };
         }
@@ -511,16 +527,39 @@ export class ChatService {
     }
   }
 
+  /**
+   * RT-087 — Agent Skills open standard (agentskills.io), v1 instructions-
+   * only scope: "activating" a skill package has no side effects and
+   * nothing to delegate (it's pure documentation) — this just returns the
+   * markdown instructions the model asked to read. Visibility was already
+   * gated by grant at advertisement time (buildSkillPackageTools()), so no
+   * grant check is repeated here.
+   */
+  private async runSkillPackageRead(
+    organizationId: string,
+    skillPackageId: string,
+    callName: string,
+    args: Record<string, unknown>,
+  ): Promise<ToolLogEntry> {
+    try {
+      const pkg = await this.skillPackageService.getById(organizationId, skillPackageId);
+      return { name: callName, arguments: args, result: { instructions: pkg.instructions } };
+    } catch (err) {
+      return { name: callName, arguments: args, error: err instanceof O2NError ? err.message : 'Failed to read skill instructions' };
+    }
+  }
+
   async chat(params: ChatParams, skipApprovalGate = false): Promise<ChatOutcome> {
     const outcome = await this.prepare(params, skipApprovalGate);
     if (outcome.kind === 'requires_approval') return outcome;
-    const { agent, conversation, llmMessages, model, llmProvider, providerName, tools, skillNameToId } = outcome.prepared;
+    const { agent, conversation, llmMessages, model, llmProvider, providerName, tools, skillNameToId, packageNameToId } =
+      outcome.prepared;
 
     // RT-085 — drain the loop's yielded tool_call/tool_result events without
     // exposing them in ChatOutcome's JSON shape (out of scope for the
     // non-streaming response for now); they're still visible afterward via
     // the persisted 'tool' conversation rows either way.
-    const loop = this.runToolLoop(llmMessages, model, llmProvider, tools, params, agent.id, skillNameToId);
+    const loop = this.runToolLoop(llmMessages, model, llmProvider, tools, params, agent.id, skillNameToId, packageNameToId);
     let step = await loop.next();
     while (!step.done) step = await loop.next();
     const { result, toolLog, totalInputTokens, totalOutputTokens } = step.value;
@@ -562,7 +601,8 @@ export class ChatService {
       yield { type: 'requires_approval', approvalId: outcome.approvalId };
       return;
     }
-    const { agent, conversation, llmMessages, model, promptChars, llmProvider, providerName, tools, skillNameToId } = outcome.prepared;
+    const { agent, conversation, llmMessages, model, promptChars, llmProvider, providerName, tools, skillNameToId, packageNameToId } =
+      outcome.prepared;
 
     const start = Date.now();
     let full = '';
@@ -582,7 +622,7 @@ export class ChatService {
       // provider call just to get per-token delivery of the same text.
       let result: LlmCompletionResult;
       try {
-        const loopResult = yield* this.runToolLoop(llmMessages, model, llmProvider, tools, params, agent.id, skillNameToId);
+        const loopResult = yield* this.runToolLoop(llmMessages, model, llmProvider, tools, params, agent.id, skillNameToId, packageNameToId);
         result = loopResult.result;
         toolLog = loopResult.toolLog;
       } catch (err) {

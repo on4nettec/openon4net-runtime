@@ -16,7 +16,9 @@ import { SkillService } from './skill-service.js';
 import { SkillGrantService } from './skill-grant-service.js';
 import { AgentService } from './agent-service.js';
 import { AgentMessageService } from './agent-message-service.js';
-import { buildSkillTools } from './agentic-tools.js';
+import { buildSkillTools, buildSkillPackageTools } from './agentic-tools.js';
+import { SkillPackageService } from './skill-package-service.js';
+import { SkillPackageGrantService } from './skill-package-grant-service.js';
 
 /**
  * RT-084 — reasoning-trace persistence: a real ProviderConfigService talks
@@ -536,6 +538,81 @@ describe('ChatService — reasoning trace persistence (RT-084)', () => {
       const secondCallMessages = provider.calls[1]?.messages ?? [];
       const toolResultMessage = secondCallMessages.find((m) => m.role === 'tool');
       expect(toolResultMessage?.content).toContain('No agent in this organization has');
+    });
+  });
+
+  describe('RT-087 — Agent Skills open standard (instructions-only)', () => {
+    it('offers a granted skill package as a read-only tool, and returns its instructions with no execution side effects', async () => {
+      const fixture = await withFixture();
+      const pkg = await new SkillPackageService(db).create(fixture.organizationId, {
+        name: 'Refund Policy',
+        description: 'Explains the refund policy to customers.',
+        instructions: 'Refunds are allowed within 30 days of purchase, no questions asked.',
+      });
+      await new SkillPackageGrantService(db).grant(fixture.agentId, pkg.id, fixture.userId);
+      const { tools: [packageTool] } = buildSkillPackageTools([pkg]);
+
+      const provider = fakeSequencedProvider([
+        {
+          content: '',
+          model: 'fake-model',
+          inputTokens: 5,
+          outputTokens: 3,
+          toolCalls: [{ id: 'call_1', name: packageTool!.name, arguments: {} }],
+        },
+        { content: 'Refunds are allowed within 30 days.', model: 'fake-model', inputTokens: 4, outputTokens: 3 },
+      ]);
+      const chatService = buildChatService(new FakeProviderConfigService(provider));
+
+      const outcome = await chatService.chat({
+        organizationId: fixture.organizationId,
+        userId: fixture.userId,
+        agentId: fixture.agentId,
+        message: 'what is the refund policy?',
+        traceId: 'trace-package-1',
+      });
+
+      expect(outcome.kind).toBe('success');
+      if (outcome.kind !== 'success') throw new Error('expected success');
+      expect(outcome.response).toBe('Refunds are allowed within 30 days.');
+
+      // The offered tool's description is the discovery-layer summary (the
+      // package's own `description`), not the full instructions.
+      expect(provider.calls[0]?.tools?.some((t) => t.name === packageTool!.name && t.description === pkg.description)).toBe(
+        true,
+      );
+      // The second call's tool-result message carries the full instructions
+      // ("activation" — the model asked to read them).
+      const secondCallMessages = provider.calls[1]?.messages ?? [];
+      const toolResultMessage = secondCallMessages.find((m) => m.role === 'tool');
+      expect(toolResultMessage?.content).toContain('30 days of purchase');
+
+      const memoryService = new MemoryService(db, redis, env.SHORT_MEMORY_TTL_SECONDS, new EmbeddingService(env));
+      const messages = await memoryService.getRecentMessages(outcome.conversationId, 10);
+      const toolRow = messages.find((m) => m.role === 'tool');
+      expect(toolRow?.metadata).not.toHaveProperty('delegatedTo');
+    });
+
+    it('does not offer a skill package to an agent it was never granted to', async () => {
+      const fixture = await withFixture();
+      await new SkillPackageService(db).create(fixture.organizationId, {
+        name: 'Ungranted Skill',
+        description: 'Never granted to anyone.',
+        instructions: 'Secret instructions.',
+      });
+
+      const provider = fakeSequencedProvider([{ content: 'Hi!', model: 'fake-model', inputTokens: 2, outputTokens: 2 }]);
+      const chatService = buildChatService(new FakeProviderConfigService(provider));
+
+      await chatService.chat({
+        organizationId: fixture.organizationId,
+        userId: fixture.userId,
+        agentId: fixture.agentId,
+        message: 'hi',
+        traceId: 'trace-package-2',
+      });
+
+      expect(provider.calls[0]?.tools?.some((t) => t.name.includes('ungranted_skill')) ?? false).toBe(false);
     });
   });
 });

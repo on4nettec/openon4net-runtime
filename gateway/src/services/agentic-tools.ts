@@ -1,6 +1,14 @@
 import type { LlmToolDefinition } from '@o2n/llm-providers';
 import type { SkillStep } from '@o2n/shared';
 import type { Skill } from './skill-service.js';
+import type { SkillPackage } from './skill-package-service.js';
+
+/** A stable, LLM-safe function name: sanitized display name + a short id suffix (names can collide, ids can't). */
+function sanitizedFunctionName(prefix: string, name: string, id: string): string {
+  const base = name.toLowerCase().replace(/[^a-z0-9_]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 40) || prefix;
+  const shortId = id.replace(/-/g, '').slice(0, 8);
+  return `${prefix}_${base}_${shortId}`;
+}
 
 /**
  * RT-085 — the JSON Schema each tool advertises to the model, hand-written
@@ -62,31 +70,21 @@ export function buildAvailableTools(userPermissions: string[]): LlmToolDefinitio
 }
 
 /**
- * RT-086 — a stable, LLM-safe function name for a Skill: sanitized name
- * plus a short id suffix (skills can share a display name, ids can't
- * collide). Not reversible by parsing alone — callers keep the
- * name→skillId map buildSkillTools() returns alongside it.
- */
-function skillFunctionName(skill: Skill): string {
-  const base = skill.name.toLowerCase().replace(/[^a-z0-9_]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 40) || 'skill';
-  const shortId = skill.id.replace(/-/g, '').slice(0, 8);
-  return `skill_${base}_${shortId}`;
-}
-
-/**
  * RT-086 — every active Skill in the org is offered to the model as a
  * callable function, regardless of whether the *calling* agent has it
  * granted — that gate (and automatic delegation to another agent that does
  * have it) happens at execution time in chat-service.ts's runToolLoop, not
  * here. This is what makes delegation "automatic": the model never needs
- * to know or care which agent ends up actually running the skill.
+ * to know or care which agent ends up actually running the skill. Not
+ * reversible by parsing the function name alone — callers keep the
+ * name→skillId map this returns alongside it.
  */
 export function buildSkillTools(skills: Skill[]): { tools: LlmToolDefinition[]; nameToSkillId: Map<string, string> } {
   const nameToSkillId = new Map<string, string>();
   const tools: LlmToolDefinition[] = [];
   for (const skill of skills) {
     if (skill.status !== 'active') continue;
-    const name = skillFunctionName(skill);
+    const name = sanitizedFunctionName('skill', skill.name, skill.id);
     nameToSkillId.set(name, skill.id);
     tools.push({
       name,
@@ -99,4 +97,29 @@ export function buildSkillTools(skills: Skill[]): { tools: LlmToolDefinition[]; 
     });
   }
   return { tools, nameToSkillId };
+}
+
+/**
+ * RT-087 — Agent Skills open standard (agentskills.io), v1 instructions-only
+ * scope. Unlike buildSkillTools() above, only skill *packages already
+ * granted to this specific agent* are offered — there's no delegation
+ * concept for pure documentation (nothing to hand off), so gating at
+ * advertisement time is simpler and just as correct. Calling one has no
+ * side effects: it returns the package's markdown instructions as the tool
+ * result ("activation" in the standard's progressive-disclosure model —
+ * name+description are the always-visible "discovery" layer, already
+ * exposed here as the function's own name/description).
+ */
+export function buildSkillPackageTools(
+  packages: SkillPackage[],
+): { tools: LlmToolDefinition[]; nameToPackageId: Map<string, string> } {
+  const nameToPackageId = new Map<string, string>();
+  const tools: LlmToolDefinition[] = [];
+  for (const pkg of packages) {
+    if (pkg.status !== 'active') continue;
+    const name = sanitizedFunctionName('read_skill', pkg.name, pkg.id);
+    nameToPackageId.set(name, pkg.id);
+    tools.push({ name, description: pkg.description, parameters: { type: 'object', properties: {} } });
+  }
+  return { tools, nameToPackageId };
 }

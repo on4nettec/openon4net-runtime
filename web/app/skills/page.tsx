@@ -2,7 +2,16 @@
 
 import { useEffect, useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
-import { api, loadSession, ApiError, downloadJson, type Session, type Skill, type SkillStep } from '@/lib/api-client';
+import {
+  api,
+  loadSession,
+  ApiError,
+  downloadJson,
+  type Session,
+  type Skill,
+  type SkillStep,
+  type SkillPackage,
+} from '@/lib/api-client';
 import type { Agent } from '@o2n/shared';
 import { Sidebar } from '@/components/Sidebar';
 
@@ -31,6 +40,20 @@ export default function SkillsPage() {
   const [rawJsonMode, setRawJsonMode] = useState(false);
   const [rawJsonText, setRawJsonText] = useState('');
 
+  // RT-087 — Agent Skills open standard (agentskills.io), v1
+  // instructions-only scope: additive alongside the JSON-steps Skills above,
+  // not a replacement.
+  const [packages, setPackages] = useState<SkillPackage[]>([]);
+  const [grantedPackageIds, setGrantedPackageIds] = useState<Set<string>>(new Set());
+  const [packageBusyId, setPackageBusyId] = useState<string | null>(null);
+  const [packageImportMode, setPackageImportMode] = useState(false);
+  const [packageName, setPackageName] = useState('');
+  const [packageDescription, setPackageDescription] = useState('');
+  const [packageInstructions, setPackageInstructions] = useState('');
+  const [packageMarkdown, setPackageMarkdown] = useState('');
+  const [packageCreating, setPackageCreating] = useState(false);
+  const [packageCreateError, setPackageCreateError] = useState<string | null>(null);
+
   function loadSkills() {
     return api
       .listSkills()
@@ -49,6 +72,24 @@ export default function SkillsPage() {
       .catch((err) => setError(err instanceof ApiError ? err.message : 'Failed to load grants'));
   }
 
+  function loadPackages() {
+    return api
+      .listSkillPackages()
+      .then(setPackages)
+      .catch((err) => setError(err instanceof ApiError ? err.message : 'Failed to load skill packages'));
+  }
+
+  function loadPackageGrantsForAgent(agentId: string) {
+    if (!agentId) {
+      setGrantedPackageIds(new Set());
+      return;
+    }
+    api
+      .listAgentSkillPackageGrants(agentId)
+      .then((grants) => setGrantedPackageIds(new Set(grants.map((g) => g.skillPackageId))))
+      .catch((err) => setError(err instanceof ApiError ? err.message : 'Failed to load skill package grants'));
+  }
+
   useEffect(() => {
     const s = loadSession();
     if (!s) {
@@ -58,6 +99,7 @@ export default function SkillsPage() {
     setSession(s);
     setReady(true);
     void loadSkills();
+    void loadPackages();
     api
       .listAgents()
       .then((list) => {
@@ -72,6 +114,7 @@ export default function SkillsPage() {
 
   useEffect(() => {
     loadGrantsForAgent(selectedAgentId);
+    loadPackageGrantsForAgent(selectedAgentId);
   }, [selectedAgentId]);
 
   async function handleGrantToggle(skill: Skill) {
@@ -174,6 +217,67 @@ export default function SkillsPage() {
       );
     } finally {
       setCreating(false);
+    }
+  }
+
+  // RT-087 — Agent Skills open standard handlers, mirroring the JSON-steps
+  // Skills handlers above (grant/revoke/delete/create) but for skill packages.
+  async function handlePackageGrantToggle(pkg: SkillPackage) {
+    if (!selectedAgentId) return;
+    setPackageBusyId(pkg.id);
+    setError(null);
+    try {
+      if (grantedPackageIds.has(pkg.id)) {
+        await api.revokeSkillPackage(selectedAgentId, pkg.id);
+      } else {
+        await api.grantSkillPackage(selectedAgentId, pkg.id);
+      }
+      loadPackageGrantsForAgent(selectedAgentId);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Failed to update skill package grant');
+    } finally {
+      setPackageBusyId(null);
+    }
+  }
+
+  async function handlePackageDelete(pkg: SkillPackage) {
+    if (!window.confirm(`Delete skill package "${pkg.name}"?`)) return;
+    setPackageBusyId(pkg.id);
+    setError(null);
+    try {
+      await api.deleteSkillPackage(pkg.id);
+      await loadPackages();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Failed to delete skill package');
+    } finally {
+      setPackageBusyId(null);
+    }
+  }
+
+  async function handlePackageCreate(e: FormEvent) {
+    e.preventDefault();
+    setPackageCreating(true);
+    setPackageCreateError(null);
+    try {
+      if (packageImportMode) {
+        await api.importSkillPackage({ agentId: creatorAgentId, markdown: packageMarkdown });
+        setPackageMarkdown('');
+      } else {
+        await api.createSkillPackage({
+          agentId: creatorAgentId,
+          name: packageName,
+          description: packageDescription,
+          instructions: packageInstructions,
+        });
+        setPackageName('');
+        setPackageDescription('');
+        setPackageInstructions('');
+      }
+      await loadPackages();
+    } catch (err) {
+      setPackageCreateError(err instanceof ApiError ? err.message : 'Failed to create skill package');
+    } finally {
+      setPackageCreating(false);
     }
   }
 
@@ -325,6 +429,126 @@ export default function SkillsPage() {
                 )}
                 <button type="submit" disabled={creating}>
                   {creating ? 'Creating…' : 'Create skill'}
+                </button>
+              </form>
+            </div>
+
+            <h1 style={{ fontSize: 'var(--font-size-xl)', marginTop: 32 }}>Agent Skills (open standard)</h1>
+            <p style={{ color: 'var(--color-muted-foreground)', fontSize: 14 }}>
+              A Skill package is markdown instructions an agent reads on demand (
+              <a href="https://agentskills.io" target="_blank" rel="noreferrer">
+                agentskills.io
+              </a>
+              ) — no fixed steps, just documentation the model uses to inform its answer. Separate from the
+              JSON-based Skills above.
+            </p>
+
+            <div className="card" style={{ marginBottom: 16 }}>
+              {packages.length === 0 ? (
+                <p style={{ color: 'var(--color-muted-foreground)', margin: 0 }}>
+                  No skill packages yet — create one below.
+                </p>
+              ) : (
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
+                  <thead>
+                    <tr style={{ textAlign: 'left', color: 'var(--color-muted-foreground)', fontSize: 12 }}>
+                      <th style={{ paddingBottom: 8 }}>Name</th>
+                      <th style={{ paddingBottom: 8 }}>Description</th>
+                      <th style={{ paddingBottom: 8 }}></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {packages.map((pkg) => {
+                      const busy = packageBusyId === pkg.id;
+                      const granted = grantedPackageIds.has(pkg.id);
+                      return (
+                        <tr key={pkg.id} style={{ borderTop: '1px solid var(--color-border)' }}>
+                          <td style={{ padding: '8px 0' }}>{pkg.name}</td>
+                          <td style={{ padding: '8px 0', color: 'var(--color-muted-foreground)' }}>{pkg.description}</td>
+                          <td style={{ padding: '8px 0', display: 'flex', gap: 8 }}>
+                            <button
+                              className="secondary"
+                              disabled={busy || !selectedAgentId}
+                              onClick={() => handlePackageGrantToggle(pkg)}
+                            >
+                              {granted ? 'Revoke' : 'Grant'}
+                            </button>
+                            <button className="secondary" disabled={busy} onClick={() => handlePackageDelete(pkg)}>
+                              Delete
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
+            </div>
+
+            <div className="card">
+              <h2 style={{ fontSize: 16, marginTop: 0 }}>Create a skill package</h2>
+              <form onSubmit={handlePackageCreate} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {packageCreateError ? <div className="error">{packageCreateError}</div> : null}
+                <label>
+                  Owning agent
+                  <select value={creatorAgentId} onChange={(e) => setCreatorAgentId(e.target.value)}>
+                    {agents.map((a) => (
+                      <option key={a.id} value={a.id}>
+                        {a.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <input type="checkbox" checked={packageImportMode} onChange={(e) => setPackageImportMode(e.target.checked)} />
+                  Import a raw SKILL.md file (paste its full text, including the --- frontmatter block)
+                </label>
+                {packageImportMode ? (
+                  <label>
+                    SKILL.md text
+                    <textarea
+                      value={packageMarkdown}
+                      onChange={(e) => setPackageMarkdown(e.target.value)}
+                      rows={12}
+                      style={{ fontFamily: 'monospace', fontSize: 13, width: '100%' }}
+                      placeholder={'---\nname: My Skill\ndescription: What it does\n---\n\nInstructions go here.'}
+                      required
+                    />
+                  </label>
+                ) : (
+                  <>
+                    <label>
+                      Name
+                      <input
+                        value={packageName}
+                        onChange={(e) => setPackageName(e.target.value)}
+                        placeholder="e.g. Refund Policy"
+                        required
+                      />
+                    </label>
+                    <label>
+                      Description (shown to the model before it decides to read the full instructions)
+                      <input
+                        value={packageDescription}
+                        onChange={(e) => setPackageDescription(e.target.value)}
+                        placeholder="A one-line summary"
+                        required
+                      />
+                    </label>
+                    <label>
+                      Instructions (the full text the model reads once it decides this skill is relevant)
+                      <textarea
+                        value={packageInstructions}
+                        onChange={(e) => setPackageInstructions(e.target.value)}
+                        rows={8}
+                        style={{ width: '100%' }}
+                        required
+                      />
+                    </label>
+                  </>
+                )}
+                <button type="submit" disabled={packageCreating}>
+                  {packageCreating ? 'Creating…' : 'Create skill package'}
                 </button>
               </form>
             </div>
