@@ -36,6 +36,7 @@ import { registerWebhookRoutes } from './routes/webhooks.js';
 import { registerSsoRoutes } from './routes/sso.js';
 import { registerPluginGrantRoutes } from './routes/plugin-grants.js';
 import { registerLocalPluginRoutes } from './routes/local-plugins.js';
+import { registerPluginExecuteRoutes } from './routes/plugin-execute.js';
 import { registerLocaleRoutes } from './routes/locales.js';
 
 export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
@@ -95,6 +96,7 @@ export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
   registerSsoRoutes(app, ctx);
   registerPluginGrantRoutes(app, ctx);
   registerLocalPluginRoutes(app, ctx);
+  registerPluginExecuteRoutes(app, ctx);
   registerLocaleRoutes(app, ctx);
 
   return app;

@@ -15,6 +15,13 @@ export interface CheckInResult {
   // Runtime user, 'organizational' allows up to maxUsers (null = unlimited).
   activationType: 'personal' | 'organizational';
   maxUsers: number | null;
+  // CP-012 — the org's own opt-in toggle for actually routing LLM calls
+  // through the Managed AI Gateway, separate from featureFlags.managedAiGateway
+  // (whether the *plan* includes it at all). Not yet consumed by RT-028/
+  // RT-078's gating — those check the plan flag only, per 02-ai-gateway.md
+  // §1.2's literal "purchased the plan" wording — kept here so this type
+  // doesn't silently drift from Platform's actual response shape.
+  aiGatewayEnabled: boolean;
 }
 
 /**

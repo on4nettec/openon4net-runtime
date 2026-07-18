@@ -1,11 +1,12 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { NotFoundError, ValidationError } from '@o2n/governance';
+import { FeatureNotAvailableError, NotFoundError, ValidationError } from '@o2n/governance';
 import type { AppContext } from '../context.js';
 import { withTransaction } from '../db.js';
 import { requirePermission } from '../lib/require-permission.js';
 import { LocalPluginService, PLUGIN_CATEGORIES } from '../services/local-plugin-service.js';
 import { AuditService } from '../services/audit-service.js';
+import { GATED_PLUGIN_CATEGORY, hasFeature, MANAGED_AI_GATEWAY_FEATURE } from '../services/license-service.js';
 
 const LocalPluginCreateBody = z.object({
   name: z.string().min(1).max(255),
@@ -28,6 +29,20 @@ export function registerLocalPluginRoutes(app: FastifyInstance, ctx: AppContext)
     requirePermission(request, 'plugins:create');
     const parsed = LocalPluginCreateBody.safeParse(request.body);
     if (!parsed.success) throw new ValidationError('Invalid plugin payload', parsed.error.flatten());
+
+    // RT-028 — Development-category (devops) plugins require the org's plan
+    // to include the Managed AI Gateway, same license gate as the
+    // Programmer Agent role (routes/agents.ts) — per 02-ai-gateway.md §1.2.
+    if (parsed.data.category === GATED_PLUGIN_CATEGORY && !hasFeature(ctx.activationState, MANAGED_AI_GATEWAY_FEATURE)) {
+      await new AuditService(ctx.db).logAction({
+        organizationId: request.auth.organizationId,
+        userId: request.auth.userId,
+        actionType: 'local-plugin-create-denied-no-license',
+        actionData: { traceId: request.traceId, category: parsed.data.category, feature: MANAGED_AI_GATEWAY_FEATURE },
+        status: 'failed',
+      });
+      throw new FeatureNotAvailableError(`"${GATED_PLUGIN_CATEGORY}" category plugins (requires Managed AI Gateway)`);
+    }
 
     return withTransaction(ctx.db, async (client) => {
       const plugin = await new LocalPluginService(client).create(request.auth.organizationId, parsed.data, request.auth.userId);

@@ -1,6 +1,6 @@
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { AgentCreateSchema, AgentKpisUpdateSchema, AgentUpdateSchema } from '@o2n/shared';
-import { ValidationError } from '@o2n/governance';
+import { FeatureNotAvailableError, ValidationError } from '@o2n/governance';
 import type { AppContext } from '../context.js';
 import { withTransaction } from '../db.js';
 import { requirePermission } from '../lib/require-permission.js';
@@ -15,6 +15,28 @@ import { listKpiSnapshots } from '../services/kpi-computation-service.js';
 import { generateInsights } from '../services/insight-generator.js';
 import { detectAnomalies } from '../services/anomaly-detector.js';
 import { predictNext } from '../services/trend-predictor.js';
+import { hasFeature, MANAGED_AI_GATEWAY_FEATURE, PROGRAMMER_AGENT_ROLE } from '../services/license-service.js';
+
+/**
+ * RT-028 — the Programmer Agent role is gated on the org's plan including
+ * the Managed AI Gateway (02-ai-gateway.md §1.2), regardless of the
+ * requesting user's own RBAC permissions. Audited on denial per the same
+ * spec ("هرگونه تلاش API ... رد شود و audit شود").
+ */
+async function assertProgrammerRoleAllowed(ctx: AppContext, request: FastifyRequest, role: string): Promise<void> {
+  if (role !== PROGRAMMER_AGENT_ROLE) return;
+  if (hasFeature(ctx.activationState, MANAGED_AI_GATEWAY_FEATURE)) return;
+
+  await new AuditService(ctx.db).logAction({
+    organizationId: request.auth.organizationId,
+    agentId: null,
+    userId: request.auth.userId,
+    actionType: 'agent-role-denied-no-license',
+    actionData: { traceId: request.traceId, role, feature: MANAGED_AI_GATEWAY_FEATURE },
+    status: 'failed',
+  });
+  throw new FeatureNotAvailableError('Programmer Agent role (requires Managed AI Gateway)');
+}
 
 export function registerAgentRoutes(app: FastifyInstance, ctx: AppContext): void {
   const agentService = new AgentService(ctx.db);
@@ -30,6 +52,7 @@ export function registerAgentRoutes(app: FastifyInstance, ctx: AppContext): void
     requirePermission(request, 'agents:create');
     const parsed = AgentCreateSchema.safeParse(request.body);
     if (!parsed.success) throw new ValidationError('Invalid agent payload', parsed.error.flatten());
+    await assertProgrammerRoleAllowed(ctx, request, parsed.data.role);
 
     const workspaceActive = await workspaceService.isActive(request.auth.organizationId, parsed.data.workspaceId);
     if (!workspaceActive) throw new ValidationError('Cannot create an agent in an archived (or unknown) workspace');
@@ -72,6 +95,9 @@ export function registerAgentRoutes(app: FastifyInstance, ctx: AppContext): void
     await requireAgentAccessible(ctx, request, request.params.id);
     const parsed = AgentUpdateSchema.safeParse(request.body);
     if (!parsed.success) throw new ValidationError('Invalid agent payload', parsed.error.flatten());
+    if (parsed.data.role !== undefined) {
+      await assertProgrammerRoleAllowed(ctx, request, parsed.data.role);
+    }
 
     return withTransaction(ctx.db, async (client) => {
       const agent = await new AgentService(client).update(

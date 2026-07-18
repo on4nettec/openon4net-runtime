@@ -33,6 +33,7 @@ const PERMISSION_CATALOG: { resource: string; permissions: string[] }[] = [
   { resource: 'approvals', permissions: ['approvals:read', 'approvals:approve', 'approvals:*'] },
   { resource: 'billing', permissions: ['billing:wallet:read', 'billing:wallet:credit'] },
   { resource: 'tools', permissions: ['tools:read', 'tools:telegram-send', 'tools:webhook-send', 'tools:*'] },
+  { resource: 'plugins', permissions: ['plugins:create', 'plugins:read', 'plugins:grant', 'plugins:execute', 'plugins:*'] },
   { resource: 'config', permissions: ['config:write'] },
   { resource: 'roles', permissions: ['roles:read', 'roles:write'] },
   { resource: 'users', permissions: ['users:read', 'users:write'] },
