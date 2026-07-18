@@ -60,6 +60,13 @@ const EnvSchema = z
     // AES-256-GCM master key for per-org llm_configs.api_key_encrypted (see
     // gateway/src/lib/crypto.ts). Generate with `openssl rand -hex 32`.
     CONFIG_ENCRYPTION_KEY: z.string().regex(/^[0-9a-f]{64}$/i, 'must be a 64-char hex string (32 bytes)'),
+    // RT-019 — set this to the OLD value of CONFIG_ENCRYPTION_KEY when
+    // rotating it, so secrets already encrypted under the old key keep
+    // decrypting (kms/env-provider.ts's 'previous' keyId) until
+    // re-encrypt-on-read transparently migrates each row to the new
+    // ('current') key. Safe to unset entirely once no row references
+    // kms_key_id = 'previous' anymore.
+    CONFIG_ENCRYPTION_KEY_PREVIOUS: z.string().regex(/^[0-9a-f]{64}$/i).optional(),
     // Optional: enables semantic memory search (migrations/0008_vector_search.sql).
     // Only takes effect when LLM_PROVIDER is openai or ollama — see
     // packages/llm-providers/src/embedding.ts for why. Left unset, memory

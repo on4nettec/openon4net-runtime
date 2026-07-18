@@ -127,4 +127,49 @@ describe('SsoConfigService', () => {
     const service = new SsoConfigService(db, env);
     await expect(service.delete(fixture.organizationId)).rejects.toThrow();
   });
+
+  it('RT-019: resolve() transparently re-encrypts a secret onto the new key after a simulated CONFIG_ENCRYPTION_KEY rotation', async () => {
+    const fixture = await withFixture();
+
+    // Simulates the state before rotation: this is the only key that has ever existed.
+    const preRotationEnv = createTestEnv({ CONFIG_ENCRYPTION_KEY: 'c'.repeat(64) });
+    const serviceBefore = new SsoConfigService(db, preRotationEnv);
+    await serviceBefore.setConfig(fixture.organizationId, {
+      protocol: 'oidc',
+      issuerUrl: 'https://idp.example.com',
+      clientId: 'client-123',
+      clientSecret: 'rotate-me',
+    });
+
+    const { rows: beforeRows } = await db.query<{ kms_key_id: string }>(
+      `SELECT kms_key_id FROM sso_configs WHERE organization_id = $1`,
+      [fixture.organizationId],
+    );
+    const keyIdBeforeRotation = beforeRows[0]!.kms_key_id;
+
+    // Simulates the operator rotating the key: the old value moves to
+    // CONFIG_ENCRYPTION_KEY_PREVIOUS, a new CONFIG_ENCRYPTION_KEY is generated.
+    const postRotationEnv = createTestEnv({
+      CONFIG_ENCRYPTION_KEY: 'd'.repeat(64),
+      CONFIG_ENCRYPTION_KEY_PREVIOUS: 'c'.repeat(64),
+    });
+    const serviceAfter = new SsoConfigService(db, postRotationEnv);
+
+    // First read after rotation: still decrypts correctly (via the previous-key fingerprint) ...
+    const resolved = await serviceAfter.resolve(fixture.organizationId);
+    expect(resolved?.secret).toBe('rotate-me');
+
+    // ... and re-encrypt-on-read should have rewritten the row onto the new current key.
+    const { rows: afterRows } = await db.query<{ kms_key_id: string }>(
+      `SELECT kms_key_id FROM sso_configs WHERE organization_id = $1`,
+      [fixture.organizationId],
+    );
+    expect(afterRows[0]!.kms_key_id).not.toBe(keyIdBeforeRotation);
+
+    // A second read no longer needs CONFIG_ENCRYPTION_KEY_PREVIOUS at all.
+    const envWithoutPreviousKey = createTestEnv({ CONFIG_ENCRYPTION_KEY: 'd'.repeat(64) });
+    const serviceFullyRotated = new SsoConfigService(db, envWithoutPreviousKey);
+    const resolvedAgain = await serviceFullyRotated.resolve(fixture.organizationId);
+    expect(resolvedAgain?.secret).toBe('rotate-me');
+  });
 });
