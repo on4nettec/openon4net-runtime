@@ -106,4 +106,14 @@ jobs:
 
       - name: Lint, typecheck, test
         working-directory: parent
+        # DATABASE_URL/REDIS_URL are already set at job level above; restated
+        # here too as a belt-and-suspenders measure after a run where some
+        # (not all) DB-dependent test files got test-support/db.ts's
+        # hardcoded fallback connection string instead — root cause not yet
+        # confirmed (a job-level env issue specific to this runner, or an
+        # unrelated flake), so this rules out the simplest explanation
+        # before digging further if it recurs.
+        env:
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/o2n
+          REDIS_URL: redis://localhost:6379
         run: pnpm turbo run lint typecheck test
