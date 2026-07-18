@@ -40,6 +40,7 @@ import { registerLocalPluginRoutes } from './routes/local-plugins.js';
 import { registerPluginExecuteRoutes } from './routes/plugin-execute.js';
 import { registerAgentFileRoutes } from './routes/agent-files.js';
 import { registerLocaleRoutes } from './routes/locales.js';
+import { registerConversationRoutes } from './routes/conversations.js';
 
 export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
   const app = Fastify({ logger: true });
@@ -104,6 +105,7 @@ export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
   registerLocalPluginRoutes(app, ctx);
   registerPluginExecuteRoutes(app, ctx);
   registerAgentFileRoutes(app, ctx);
+  registerConversationRoutes(app, ctx);
   registerLocaleRoutes(app, ctx);
 
   return app;

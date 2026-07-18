@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import type { Agent } from '@o2n/shared';
+import type { Agent, Conversation } from '@o2n/shared';
 import { api, loadSession, streamChat, ApiError, type Session } from '@/lib/api-client';
 import { applyDocumentDirection, isRtlLanguage } from '@/lib/i18n';
 import { Sidebar } from '@/components/Sidebar';
@@ -52,6 +52,72 @@ export default function AgentChatPage() {
   const [files, setFiles] = useState<AgentFile[]>([]);
   const [filesError, setFilesError] = useState<string | null>(null);
   const [uploadingFile, setUploadingFile] = useState(false);
+
+  // RT-022 — session management: an agent can have many conversations.
+  const [showSessions, setShowSessions] = useState(false);
+  const [sessions, setSessions] = useState<Conversation[]>([]);
+  const [sessionsError, setSessionsError] = useState<string | null>(null);
+
+  function loadSessions() {
+    api
+      .listConversations(agentId)
+      .then(setSessions)
+      .catch((err) => setSessionsError(err instanceof ApiError ? err.message : 'Failed to load sessions'));
+  }
+
+  async function handleNewSession() {
+    try {
+      const conversation = await api.createConversation(agentId);
+      setConversationId(conversation.id);
+      setMessages([]);
+      setNotice(null);
+      loadSessions();
+    } catch (err) {
+      setSessionsError(err instanceof ApiError ? err.message : 'Failed to create a new session');
+    }
+  }
+
+  async function handleSwitchSession(id: string) {
+    if (id === conversationId) return;
+    try {
+      const { messages: history } = await api.getConversationMessages(agentId, id);
+      const displayable = history.filter((m) => m.role === 'user' || m.role === 'agent');
+      setMessages(displayable.map((m) => ({ role: m.role as 'user' | 'agent', content: m.content })));
+      setConversationId(id);
+      setNotice(null);
+    } catch (err) {
+      setSessionsError(err instanceof ApiError ? err.message : 'Failed to load that session');
+    }
+  }
+
+  async function handleRenameSession(id: string, currentTitle: string | null) {
+    const title = window.prompt('Rename session', currentTitle ?? '');
+    if (!title || !title.trim()) return;
+    try {
+      await api.renameConversation(agentId, id, title.trim());
+      loadSessions();
+    } catch (err) {
+      setSessionsError(err instanceof ApiError ? err.message : 'Failed to rename session');
+    }
+  }
+
+  async function handleArchiveSession(id: string) {
+    if (!window.confirm('Archive this session? It will no longer appear in the recent list.')) return;
+    try {
+      await api.archiveConversation(agentId, id);
+      loadSessions();
+      // The active session was archived out from under the user — fall back
+      // to whatever the server now considers "latest" instead of leaving the
+      // chat pointed at a session that no longer appears anywhere in the UI.
+      if (id === conversationId) {
+        setConversationId(undefined);
+        setMessages([]);
+        loadHistory().catch(() => {});
+      }
+    } catch (err) {
+      setSessionsError(err instanceof ApiError ? err.message : 'Failed to archive session');
+    }
+  }
 
   function loadFiles() {
     api
@@ -241,6 +307,18 @@ export default function AgentChatPage() {
           <button
             className="secondary"
             onClick={() => {
+              setShowSessions((v) => !v);
+              if (!showSessions) loadSessions();
+            }}
+          >
+            {showSessions ? 'Hide sessions' : 'Sessions'}
+          </button>
+          <button className="secondary" onClick={handleNewSession}>
+            + New session
+          </button>
+          <button
+            className="secondary"
+            onClick={() => {
               setShowFiles((v) => !v);
               if (!showFiles) loadFiles();
             }}
@@ -251,6 +329,48 @@ export default function AgentChatPage() {
       </div>
 
       <div className="page" style={{ display: 'flex', gap: 16, height: 'calc(100vh - 120px)' }}>
+        {showSessions ? (
+          <div className="card" style={{ width: 240, flexShrink: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <strong style={{ fontSize: 13 }}>Recent sessions</strong>
+            {sessionsError ? <div className="error">{sessionsError}</div> : null}
+            {sessions.length === 0 ? (
+              <p className="muted" style={{ fontSize: 12, margin: 0 }}>No sessions yet.</p>
+            ) : (
+              sessions.map((s) => (
+                <div
+                  key={s.id}
+                  style={{
+                    borderTop: '1px solid var(--color-border)',
+                    paddingTop: 8,
+                    fontSize: 12,
+                    background: s.id === conversationId ? 'var(--color-primary-subtle)' : undefined,
+                  }}
+                >
+                  <button
+                    className="secondary"
+                    style={{ width: '100%', textAlign: 'left', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                    title={s.title ?? s.id}
+                    onClick={() => handleSwitchSession(s.id)}
+                  >
+                    {s.title ?? `Session ${s.id.slice(0, 8)}`}
+                  </button>
+                  <div className="muted" style={{ fontSize: 11, marginTop: 2, marginBottom: 4 }}>
+                    {s.messageCount} messages
+                  </div>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <button className="secondary" onClick={() => handleRenameSession(s.id, s.title)}>
+                      Rename
+                    </button>
+                    <button className="secondary" onClick={() => handleArchiveSession(s.id)}>
+                      Archive
+                    </button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        ) : null}
+
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
           {notice ? <div className="error">{notice}</div> : null}
 

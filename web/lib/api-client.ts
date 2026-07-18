@@ -434,6 +434,29 @@ export const api = {
   getLatestConversation: (agentId: string) =>
     request<{ conversation: Conversation | null; messages: Message[] }>(`/v1/agents/${agentId}/conversation`),
 
+  // RT-022 — session management: an agent can have many conversations.
+  listConversations: (agentId: string) => request<Conversation[]>(`/v1/agents/${agentId}/conversations`),
+
+  createConversation: (agentId: string, title?: string) =>
+    request<Conversation>(`/v1/agents/${agentId}/conversations`, {
+      method: 'POST',
+      body: JSON.stringify(title ? { title } : {}),
+    }),
+
+  getConversationMessages: (agentId: string, conversationId: string) =>
+    request<{ conversation: Conversation; messages: Message[] }>(
+      `/v1/agents/${agentId}/conversations/${conversationId}/messages`,
+    ),
+
+  renameConversation: (agentId: string, conversationId: string, title: string) =>
+    request<Conversation>(`/v1/agents/${agentId}/conversations/${conversationId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ title }),
+    }),
+
+  archiveConversation: (agentId: string, conversationId: string) =>
+    request<Conversation>(`/v1/agents/${agentId}/conversations/${conversationId}/archive`, { method: 'POST' }),
+
   getRateLimitStatus: (agentId: string) =>
     request<{ usedThisMinute: number; limitPerMinute: number; resetsInSeconds: number }>(
       `/v1/agents/${agentId}/rate-limit`,

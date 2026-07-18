@@ -97,6 +97,49 @@ export class MemoryService {
     return row ? toConversation(row) : null;
   }
 
+  /** RT-022 — every session for an agent, most-recently-active first, for the session picker's "Recent" list. */
+  async listConversations(agentId: string, options: { includeArchived?: boolean } = {}): Promise<Conversation[]> {
+    const { rows } = await this.db.query<ConversationRow>(
+      options.includeArchived
+        ? `SELECT * FROM conversations WHERE agent_id = $1 ORDER BY updated_at DESC`
+        : `SELECT * FROM conversations WHERE agent_id = $1 AND status != 'archived' ORDER BY updated_at DESC`,
+      [agentId],
+    );
+    return rows.map(toConversation);
+  }
+
+  /** RT-022 — explicit "+ New session", distinct from getOrCreateConversation's implicit resume-or-create. */
+  async createConversation(agentId: string, userId: string | null, title?: string): Promise<Conversation> {
+    const { rows } = await this.db.query<ConversationRow>(
+      `INSERT INTO conversations (agent_id, user_id, title) VALUES ($1, $2, $3) RETURNING *`,
+      [agentId, userId, title ?? null],
+    );
+    const row = rows[0];
+    if (!row) throw new Error('Insert did not return a row');
+    return toConversation(row);
+  }
+
+  async renameConversation(conversationId: string, title: string): Promise<Conversation> {
+    const { rows } = await this.db.query<ConversationRow>(
+      `UPDATE conversations SET title = $2, updated_at = NOW() WHERE id = $1 RETURNING *`,
+      [conversationId, title],
+    );
+    const row = rows[0];
+    if (!row) throw new NotFoundError('Conversation', conversationId);
+    return toConversation(row);
+  }
+
+  /** Soft-delete, same reasoning as workspaces/agents — a session's messages/audit trail must survive. */
+  async archiveConversation(conversationId: string): Promise<Conversation> {
+    const { rows } = await this.db.query<ConversationRow>(
+      `UPDATE conversations SET status = 'archived', updated_at = NOW() WHERE id = $1 RETURNING *`,
+      [conversationId],
+    );
+    const row = rows[0];
+    if (!row) throw new NotFoundError('Conversation', conversationId);
+    return toConversation(row);
+  }
+
   async getOrCreateConversation(agentId: string, userId: string | null, conversationId?: string): Promise<Conversation> {
     if (conversationId) {
       const { rows } = await this.db.query<ConversationRow>(
