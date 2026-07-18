@@ -3,7 +3,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import type { Agent, KpiDefinition, Organization, User, Workspace } from '@o2n/shared';
+import type { Agent, KpiDefinition, Organization, User } from '@o2n/shared';
 import { AGENT_ROLE_CATALOG } from '@o2n/shared';
 import { api, loadSession, ApiError, type Session } from '@/lib/api-client';
 import { applyDocumentDirection } from '@/lib/i18n';
@@ -57,8 +57,6 @@ export default function AgentsPage() {
   const [roleChoice, setRoleChoice] = useState<string>(AGENT_ROLE_CATALOG[0]?.value ?? OTHER_ROLE);
   const [customRole, setCustomRole] = useState('');
   const role = roleChoice === OTHER_ROLE ? customRole : roleChoice;
-  const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
-  const [workspaceId, setWorkspaceId] = useState('');
   const [reportsTo, setReportsTo] = useState('');
   const [creating, setCreating] = useState(false);
   const [actioningId, setActioningId] = useState<string | null>(null);
@@ -91,14 +89,7 @@ export default function AgentsPage() {
       return;
     }
     setSession(s);
-    setWorkspaceId(s.workspaceId);
     void refresh();
-    // Best-effort: viewer/editor roles without workspaces:read just keep
-    // using the session's default workspace, no picker shown.
-    api
-      .listWorkspaces()
-      .then(setWorkspaces)
-      .catch(() => {});
     // RT-082 — fetched fresh rather than cached on the session, since
     // activationType can change out-of-band via Control Plane's hourly
     // check-in (activation-scheduler.ts), not just at login.
@@ -156,7 +147,10 @@ export default function AgentsPage() {
     try {
       const s = loadSession();
       if (!s) throw new Error('No session');
-      await api.createAgent({ name, role, workspaceId: workspaceId || s.workspaceId, reportsTo: reportsTo || undefined });
+      // RT-023 — a dedicated 1:1 workspace per agent, created automatically
+      // rather than asking the admin to pick a shared one.
+      const dedicatedWorkspace = await api.createWorkspace({ name: `${name} Workspace` });
+      await api.createAgent({ name, role, workspaceId: dedicatedWorkspace.id, reportsTo: reportsTo || undefined });
       setName('');
       setRoleChoice(AGENT_ROLE_CATALOG[0]?.value ?? OTHER_ROLE);
       setCustomRole('');
@@ -364,13 +358,18 @@ export default function AgentsPage() {
       <div className="page">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
           <h1 style={{ fontSize: 'var(--font-size-xl)', margin: 0 }}>Digital Employees</h1>
-          <button onClick={() => setShowCreate((v) => !v)}>{showCreate ? 'Cancel' : 'New agent'}</button>
+          {session.role === 'admin' ? (
+            <button onClick={() => setShowCreate((v) => !v)}>{showCreate ? 'Cancel' : '+ New agent'}</button>
+          ) : null}
         </div>
 
         {error ? <div className="error">{error}</div> : null}
 
-        {showCreate ? (
+        {showCreate && session.role === 'admin' ? (
           <form className="card" onSubmit={handleCreate} style={{ marginBottom: 20 }}>
+            <p className="muted" style={{ fontSize: 12, marginTop: 0 }}>
+              A dedicated workspace is created automatically for this agent (1:1) — no need to pick one.
+            </p>
             <div className="field">
               <label htmlFor="name">Name</label>
               <input id="name" value={name} onChange={(e) => setName(e.target.value)} required />
@@ -396,18 +395,6 @@ export default function AgentsPage() {
                   placeholder="e.g. video-editor"
                   required
                 />
-              </div>
-            ) : null}
-            {workspaces.length > 1 ? (
-              <div className="field">
-                <label htmlFor="workspace">Workspace</label>
-                <select id="workspace" value={workspaceId} onChange={(e) => setWorkspaceId(e.target.value)}>
-                  {workspaces.map((w) => (
-                    <option key={w.id} value={w.id}>
-                      {w.name}
-                    </option>
-                  ))}
-                </select>
               </div>
             ) : null}
             {agents.length > 0 ? (
