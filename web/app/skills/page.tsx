@@ -331,11 +331,11 @@ export default function SkillsPage() {
                       const granted = grantedSkillIds.has(skill.id);
                       return (
                         <tr key={skill.id} style={{ borderTop: '1px solid var(--color-border)' }}>
-                          <td style={{ padding: '8px 0' }}>{skill.name}</td>
-                          <td style={{ padding: '8px 0', color: 'var(--color-muted-foreground)' }}>{skill.source}</td>
-                          <td style={{ padding: '8px 0' }}>{skill.executionCount}</td>
-                          <td style={{ padding: '8px 0' }}>{skill.successRate}%</td>
-                          <td style={{ padding: '8px 0', display: 'flex', gap: 8 }}>
+                          <td style={{ padding: 'var(--space-2) var(--space-3) var(--space-2) 0' }}>{skill.name}</td>
+                          <td style={{ padding: 'var(--space-2) var(--space-3) var(--space-2) 0', color: 'var(--color-muted-foreground)' }}>{skill.source}</td>
+                          <td style={{ padding: 'var(--space-2) var(--space-3) var(--space-2) 0' }}>{skill.executionCount}</td>
+                          <td style={{ padding: 'var(--space-2) var(--space-3) var(--space-2) 0' }}>{skill.successRate}%</td>
+                          <td style={{ padding: 'var(--space-2) var(--space-3) var(--space-2) 0', display: 'flex', gap: 8 }}>
                             <button className="secondary" disabled={busy || !selectedAgentId} onClick={() => handleGrantToggle(skill)}>
                               {granted ? 'Revoke' : 'Grant'}
                             </button>
@@ -463,9 +463,9 @@ export default function SkillsPage() {
                       const granted = grantedPackageIds.has(pkg.id);
                       return (
                         <tr key={pkg.id} style={{ borderTop: '1px solid var(--color-border)' }}>
-                          <td style={{ padding: '8px 0' }}>{pkg.name}</td>
-                          <td style={{ padding: '8px 0', color: 'var(--color-muted-foreground)' }}>{pkg.description}</td>
-                          <td style={{ padding: '8px 0', display: 'flex', gap: 8 }}>
+                          <td style={{ padding: 'var(--space-2) var(--space-3) var(--space-2) 0' }}>{pkg.name}</td>
+                          <td style={{ padding: 'var(--space-2) var(--space-3) var(--space-2) 0', color: 'var(--color-muted-foreground)' }}>{pkg.description}</td>
+                          <td style={{ padding: 'var(--space-2) var(--space-3) var(--space-2) 0', display: 'flex', gap: 8 }}>
                             <button
                               className="secondary"
                               disabled={busy || !selectedAgentId}

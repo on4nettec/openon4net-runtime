@@ -462,17 +462,10 @@ export default function AgentChatPage() {
       </div>
 
       {/* RT-021 — 3-panel layout (Control/Chat/Workspace), mirrored under RTL
-          so Control ends up on the reading-start side either way. */}
-      <div
-        className="page"
-        style={{
-          display: 'flex',
-          flexDirection: isRtlLanguage(effectiveLanguage) ? 'row-reverse' : 'row',
-          gap: 'var(--space-4)',
-          height: 'calc(100vh - 120px)',
-        }}
-      >
-        <div className="card" style={{ width: 240, flexShrink: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 'var(--space-2-5)' }}>
+          so Control ends up on the reading-start side either way. RT-100 —
+          stacks into a single column below 900px (see globals.css). */}
+      <div className={`page chat-layout${isRtlLanguage(effectiveLanguage) ? ' chat-layout-rtl' : ''}`}>
+        <div className="card chat-panel-control">
           <div style={{ display: 'flex', gap: 'var(--space-1-5)', alignItems: 'center' }}>
             <select
               value={agentId}
@@ -568,7 +561,7 @@ export default function AgentChatPage() {
           )}
         </div>
 
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+        <div className="chat-panel-main">
           {notice ? <div className="error">{notice}</div> : null}
 
           <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 'var(--space-2-5)' }}>
@@ -676,7 +669,7 @@ export default function AgentChatPage() {
           </form>
         </div>
 
-        <div className="card" style={{ width: 280, flexShrink: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 'var(--space-2-5)' }}>
+        <div className="card chat-panel-workspace">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <strong style={{ fontSize: 'var(--font-size-sm)' }}>Workspace files</strong>
             <button className="secondary" onClick={loadFiles} title="Refresh">

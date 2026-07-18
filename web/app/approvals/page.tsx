@@ -98,12 +98,12 @@ export default function ApprovalsPage() {
                     const busy = busyId === entry.id;
                     return (
                       <tr key={entry.id} style={{ borderTop: '1px solid var(--color-border)' }}>
-                        <td style={{ padding: '8px 0' }}>{describeEntry(entry)}</td>
-                        <td style={{ padding: '8px 0', color: 'var(--color-muted-foreground)' }}>{entry.reason ?? '—'}</td>
-                        <td style={{ padding: '8px 0', color: 'var(--color-muted-foreground)' }}>
+                        <td style={{ padding: 'var(--space-2) var(--space-3) var(--space-2) 0' }}>{describeEntry(entry)}</td>
+                        <td style={{ padding: 'var(--space-2) var(--space-3) var(--space-2) 0', color: 'var(--color-muted-foreground)' }}>{entry.reason ?? '—'}</td>
+                        <td style={{ padding: 'var(--space-2) var(--space-3) var(--space-2) 0', color: 'var(--color-muted-foreground)' }}>
                           {entry.expiresAt ? new Date(entry.expiresAt).toLocaleString() : '—'}
                         </td>
-                        <td style={{ padding: '8px 0', display: 'flex', gap: 8 }}>
+                        <td style={{ padding: 'var(--space-2) var(--space-3) var(--space-2) 0', display: 'flex', gap: 8 }}>
                           <button disabled={busy} onClick={() => handleApprove(entry)}>
                             Approve
                           </button>

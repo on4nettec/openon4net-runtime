@@ -221,9 +221,9 @@ export default function PublisherDashboardPage() {
                   <tbody>
                     {plugins.map((plugin) => (
                       <tr key={plugin.pluginId} style={{ borderTop: '1px solid var(--color-border)' }}>
-                        <td style={{ padding: '4px 0' }}>{plugin.name}</td>
-                        <td style={{ padding: '4px 0', color: 'var(--color-muted-foreground)' }}>{plugin.latestVersion ?? '—'}</td>
-                        <td style={{ padding: '4px 0', color: 'var(--color-muted-foreground)' }}>{plugin.latestVersionStatus ?? plugin.status}</td>
+                        <td style={{ padding: 'var(--space-1) var(--space-3) var(--space-1) 0' }}>{plugin.name}</td>
+                        <td style={{ padding: 'var(--space-1) var(--space-3) var(--space-1) 0', color: 'var(--color-muted-foreground)' }}>{plugin.latestVersion ?? '—'}</td>
+                        <td style={{ padding: 'var(--space-1) var(--space-3) var(--space-1) 0', color: 'var(--color-muted-foreground)' }}>{plugin.latestVersionStatus ?? plugin.status}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -286,11 +286,11 @@ export default function PublisherDashboardPage() {
                   <tbody>
                     {skills.map((skill) => (
                       <tr key={skill.skillId} style={{ borderTop: '1px solid var(--color-border)' }}>
-                        <td style={{ padding: '4px 0' }}>{skill.name}</td>
-                        <td style={{ padding: '4px 0', color: 'var(--color-muted-foreground)' }}>
+                        <td style={{ padding: 'var(--space-1) var(--space-3) var(--space-1) 0' }}>{skill.name}</td>
+                        <td style={{ padding: 'var(--space-1) var(--space-3) var(--space-1) 0', color: 'var(--color-muted-foreground)' }}>
                           {skill.priceCents === 0 ? 'Free' : `$${(skill.priceCents / 100).toFixed(2)}`}
                         </td>
-                        <td style={{ padding: '4px 0', color: 'var(--color-muted-foreground)' }}>{skill.status}</td>
+                        <td style={{ padding: 'var(--space-1) var(--space-3) var(--space-1) 0', color: 'var(--color-muted-foreground)' }}>{skill.status}</td>
                       </tr>
                     ))}
                   </tbody>

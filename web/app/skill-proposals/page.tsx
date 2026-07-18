@@ -98,12 +98,12 @@ export default function SkillProposalsPage() {
                     const busy = busyId === proposal.id;
                     return (
                       <tr key={proposal.id} style={{ borderTop: '1px solid var(--color-border)' }}>
-                        <td style={{ padding: '8px 0' }}>{describeStep(proposal)}</td>
-                        <td style={{ padding: '8px 0', color: 'var(--color-muted-foreground)' }}>
+                        <td style={{ padding: 'var(--space-2) var(--space-3) var(--space-2) 0' }}>{describeStep(proposal)}</td>
+                        <td style={{ padding: 'var(--space-2) var(--space-3) var(--space-2) 0', color: 'var(--color-muted-foreground)' }}>
                           {String(proposal.patternMetadata.occurrences ?? '?')} in{' '}
                           {String(proposal.patternMetadata.windowDays ?? '?')} days
                         </td>
-                        <td style={{ padding: '8px 0', display: 'flex', gap: 8 }}>
+                        <td style={{ padding: 'var(--space-2) var(--space-3) var(--space-2) 0', display: 'flex', gap: 8 }}>
                           <button disabled={busy} onClick={() => handleApprove(proposal)}>
                             Approve
                           </button>

@@ -222,21 +222,21 @@ export default function MarketplacePage() {
                       const skillInstalled = installedSkillIds.has(skill.skillId);
                       return (
                         <tr key={skill.skillId} style={{ borderTop: '1px solid var(--color-border)' }}>
-                          <td style={{ padding: '8px 0' }}>
+                          <td style={{ padding: 'var(--space-2) var(--space-3) var(--space-2) 0' }}>
                             {skill.name}
                             {skill.description ? (
                               <div style={{ color: 'var(--color-muted-foreground)', fontSize: 12 }}>{skill.description}</div>
                             ) : null}
                           </td>
-                          <td style={{ padding: '8px 0', color: 'var(--color-muted-foreground)' }}>{skill.publisherSlug}</td>
-                          <td style={{ padding: '8px 0' }}>
+                          <td style={{ padding: 'var(--space-2) var(--space-3) var(--space-2) 0', color: 'var(--color-muted-foreground)' }}>{skill.publisherSlug}</td>
+                          <td style={{ padding: 'var(--space-2) var(--space-3) var(--space-2) 0' }}>
                             {skill.priceCents === 0 ? 'Free' : `$${(skill.priceCents / 100).toFixed(2)}`}
                           </td>
-                          <td style={{ padding: '8px 0', color: 'var(--color-muted-foreground)' }}>{skill.installCount}</td>
-                          <td style={{ padding: '8px 0', color: 'var(--color-muted-foreground)' }}>
+                          <td style={{ padding: 'var(--space-2) var(--space-3) var(--space-2) 0', color: 'var(--color-muted-foreground)' }}>{skill.installCount}</td>
+                          <td style={{ padding: 'var(--space-2) var(--space-3) var(--space-2) 0', color: 'var(--color-muted-foreground)' }}>
                             {formatRating(skill.avgRating, skill.ratingCount)}
                           </td>
-                          <td style={{ padding: '8px 0' }}>
+                          <td style={{ padding: 'var(--space-2) var(--space-3) var(--space-2) 0' }}>
                             {skillInstalled ? (
                               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                                 <select
@@ -380,7 +380,7 @@ export default function MarketplacePage() {
               </p>
               {localPluginsError ? <div className="error">{localPluginsError}</div> : null}
 
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 12 }}>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', marginBottom: 12 }}>
                 <select value={uploadCategory} onChange={(e) => setUploadCategory(e.target.value)}>
                   <option value="">No category</option>
                   {PLUGIN_CATEGORIES.map((c) => (

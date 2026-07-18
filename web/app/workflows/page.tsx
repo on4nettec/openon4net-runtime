@@ -202,11 +202,11 @@ export default function WorkflowsPage() {
                                 <tbody>
                                   {runs.map((run) => (
                                     <tr key={run.id} style={{ borderTop: '1px solid var(--color-border)' }}>
-                                      <td style={{ padding: '4px 0' }}>
+                                      <td style={{ padding: 'var(--space-1) var(--space-3) var(--space-1) 0' }}>
                                         {run.startedAt ? new Date(run.startedAt).toLocaleString() : '—'}
                                       </td>
-                                      <td style={{ padding: '4px 0' }}>{run.status}</td>
-                                      <td style={{ padding: '4px 0', color: 'var(--color-muted-foreground)' }}>{run.currentStepId ?? '—'}</td>
+                                      <td style={{ padding: 'var(--space-1) var(--space-3) var(--space-1) 0' }}>{run.status}</td>
+                                      <td style={{ padding: 'var(--space-1) var(--space-3) var(--space-1) 0', color: 'var(--color-muted-foreground)' }}>{run.currentStepId ?? '—'}</td>
                                     </tr>
                                   ))}
                                 </tbody>

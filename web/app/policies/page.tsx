@@ -155,14 +155,14 @@ export default function PoliciesPage() {
                       const busy = togglingId === p.id;
                       return (
                         <tr key={p.id} style={{ borderTop: '1px solid var(--color-border)' }}>
-                          <td style={{ padding: '8px 0' }}>{p.name}</td>
-                          <td style={{ padding: '8px 0', color: 'var(--color-muted-foreground)' }}>{describeCondition(p.condition)}</td>
-                          <td style={{ padding: '8px 0' }}>
+                          <td style={{ padding: 'var(--space-2) var(--space-3) var(--space-2) 0' }}>{p.name}</td>
+                          <td style={{ padding: 'var(--space-2) var(--space-3) var(--space-2) 0', color: 'var(--color-muted-foreground)' }}>{describeCondition(p.condition)}</td>
+                          <td style={{ padding: 'var(--space-2) var(--space-3) var(--space-2) 0' }}>
                             <span style={{ color: p.isActive ? 'var(--color-success)' : 'var(--color-muted-foreground)' }}>
                               {p.isActive ? 'Active' : 'Inactive'}
                             </span>
                           </td>
-                          <td style={{ padding: '8px 0', display: 'flex', gap: 8 }}>
+                          <td style={{ padding: 'var(--space-2) var(--space-3) var(--space-2) 0', display: 'flex', gap: 8 }}>
                             <button className="secondary" disabled={busy} onClick={() => handleToggle(p)}>
                               {p.isActive ? 'Disable' : 'Enable'}
                             </button>

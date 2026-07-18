@@ -142,14 +142,14 @@ export default function DashboardPage() {
                   <tbody>
                     {recentLogs.map((log) => (
                       <tr key={log.id} style={{ borderTop: '1px solid var(--color-border)' }}>
-                        <td style={{ padding: '8px 0', whiteSpace: 'nowrap', color: 'var(--color-muted-foreground)' }}>
+                        <td style={{ padding: 'var(--space-2) var(--space-3) var(--space-2) 0', whiteSpace: 'nowrap', color: 'var(--color-muted-foreground)' }}>
                           {new Date(log.createdAt).toLocaleString()}
                         </td>
                         <td style={{ padding: '8px 12px' }}>{log.actionType}</td>
                         <td style={{ padding: '8px 12px', color: 'var(--color-muted-foreground)' }}>
                           {log.agentId ? (agentsById.get(log.agentId)?.name ?? log.agentId) : '—'}
                         </td>
-                        <td style={{ padding: '8px 0' }}>
+                        <td style={{ padding: 'var(--space-2) var(--space-3) var(--space-2) 0' }}>
                           <span
                             className={`badge ${log.status === 'failed' ? 'badge-error' : log.status === 'pending' ? 'badge-warning' : 'badge-success'}`}
                           >

@@ -881,10 +881,10 @@ export default function AgentsPage() {
                           <tbody>
                             {accessBindings.map((b) => (
                               <tr key={b.id} style={{ borderTop: '1px solid var(--color-border)' }}>
-                                <td style={{ padding: '6px 0' }}>{b.userName}</td>
-                                <td style={{ padding: '6px 0', color: 'var(--color-muted-foreground)' }}>{b.userEmail}</td>
-                                <td style={{ padding: '6px 0', color: 'var(--color-muted-foreground)' }}>{b.accessRole}</td>
-                                <td style={{ padding: '6px 0' }}>
+                                <td style={{ padding: 'var(--space-1-5) var(--space-3) var(--space-1-5) 0' }}>{b.userName}</td>
+                                <td style={{ padding: 'var(--space-1-5) var(--space-3) var(--space-1-5) 0', color: 'var(--color-muted-foreground)' }}>{b.userEmail}</td>
+                                <td style={{ padding: 'var(--space-1-5) var(--space-3) var(--space-1-5) 0', color: 'var(--color-muted-foreground)' }}>{b.accessRole}</td>
+                                <td style={{ padding: 'var(--space-1-5) var(--space-3) var(--space-1-5) 0' }}>
                                   <button
                                     className="secondary"
                                     disabled={savingAccess}

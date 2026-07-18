@@ -466,9 +466,9 @@ export default function SettingsPage() {
               Shown in the sidebar. PNG, JPEG, SVG, or WebP, up to 2MB. Leave either one unset to use the default
               O2N mark.
             </p>
-            <div className="card" style={{ marginBottom: 24, display: 'flex', gap: 24 }}>
+            <div className="card" style={{ marginBottom: 24, display: 'flex', flexWrap: 'wrap', gap: 24 }}>
               {logoUploadError ? <div className="error">{logoUploadError}</div> : null}
-              <div className="field" style={{ flex: 1 }}>
+              <div className="field" style={{ flex: '1 1 200px' }}>
                 <label htmlFor="logo-light">Logo (light backgrounds)</label>
                 {organization?.logoLightUrl ? (
                   <img src={organization.logoLightUrl} alt="Light logo" style={{ maxHeight: 40, marginBottom: 8, background: '#fff', padding: 4, borderRadius: 4 }} />
@@ -482,7 +482,7 @@ export default function SettingsPage() {
                 />
                 {uploadingLogo === 'light' ? <span className="muted" style={{ fontSize: 12 }}>Uploading…</span> : null}
               </div>
-              <div className="field" style={{ flex: 1 }}>
+              <div className="field" style={{ flex: '1 1 200px' }}>
                 <label htmlFor="logo-dark">Logo (dark backgrounds)</label>
                 {organization?.logoDarkUrl ? (
                   <img src={organization.logoDarkUrl} alt="Dark logo" style={{ maxHeight: 40, marginBottom: 8 }} />

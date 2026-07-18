@@ -255,6 +255,41 @@ button.danger:hover:not(:disabled) {
   overflow-x: auto;
 }
 
+/* RT-021/RT-100 — Chat page's 3-panel layout (Control/Chat/Workspace).
+   Direction is picked via a modifier class (not inline style) so the
+   mobile media query below can override it — inline styles always beat
+   a stylesheet rule regardless of @media, so the RTL/LTR choice has to
+   live here to stay overridable. */
+.chat-layout {
+  display: flex;
+  gap: var(--space-4);
+  height: calc(100vh - 120px);
+  flex-direction: row;
+}
+.chat-layout.chat-layout-rtl {
+  flex-direction: row-reverse;
+}
+.chat-panel-control,
+.chat-panel-workspace {
+  flex-shrink: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2-5);
+}
+.chat-panel-control {
+  width: 240px;
+}
+.chat-panel-workspace {
+  width: 280px;
+}
+.chat-panel-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
 .field {
   display: flex;
   flex-direction: column;
@@ -462,5 +497,26 @@ button.danger:hover:not(:disabled) {
 
   .card {
     padding: var(--space-4);
+  }
+
+  /* RT-100 — the Chat page's 3-panel layout stacks vertically instead of
+     forcing 3 fixed-width columns into a viewport too narrow for them.
+     Confirmed via a real headless-browser pass: at 390px wide the
+     original layout overflowed to ~568px, leaving the session list and
+     workspace-files panel off-screen with no visible way to scroll to
+     them. */
+  .chat-layout,
+  .chat-layout.chat-layout-rtl {
+    flex-direction: column;
+    height: auto;
+  }
+
+  .chat-panel-control,
+  .chat-panel-workspace {
+    width: 100%;
+  }
+
+  .chat-panel-main {
+    min-height: 50vh;
   }
 }

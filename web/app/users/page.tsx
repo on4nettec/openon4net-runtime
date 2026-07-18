@@ -197,12 +197,12 @@ export default function UsersPage() {
                     const busy = updatingId === u.id;
                     return (
                       <tr key={u.id} style={{ borderTop: '1px solid var(--color-border)' }}>
-                        <td style={{ padding: '8px 0' }}>
+                        <td style={{ padding: 'var(--space-2) var(--space-3) var(--space-2) 0' }}>
                           {u.email}
                           {isSelf ? <span style={{ color: 'var(--color-muted-foreground)' }}> (you)</span> : null}
                         </td>
-                        <td style={{ padding: '8px 0' }}>{u.name}</td>
-                        <td style={{ padding: '8px 0' }}>
+                        <td style={{ padding: 'var(--space-2) var(--space-3) var(--space-2) 0' }}>{u.name}</td>
+                        <td style={{ padding: 'var(--space-2) var(--space-3) var(--space-2) 0' }}>
                           {isSelf ? (
                             <span style={{ textTransform: 'capitalize' }}>{u.role}</span>
                           ) : (
@@ -219,12 +219,12 @@ export default function UsersPage() {
                             </select>
                           )}
                         </td>
-                        <td style={{ padding: '8px 0' }}>
+                        <td style={{ padding: 'var(--space-2) var(--space-3) var(--space-2) 0' }}>
                           <span style={{ color: u.isActive ? 'var(--color-success)' : 'var(--color-error)' }}>
                             {u.isActive ? 'Active' : 'Deactivated'}
                           </span>
                         </td>
-                        <td style={{ padding: '8px 0' }}>
+                        <td style={{ padding: 'var(--space-2) var(--space-3) var(--space-2) 0' }}>
                           {isSelf ? null : (
                             <button className="secondary" disabled={busy} onClick={() => handleToggleActive(u)}>
                               {busy ? '…' : u.isActive ? 'Deactivate' : 'Reactivate'}
@@ -298,10 +298,10 @@ export default function UsersPage() {
                   <tbody>
                     {invitations.map((inv) => (
                       <tr key={inv.id} style={{ borderTop: '1px solid var(--color-border)' }}>
-                        <td style={{ padding: '8px 0' }}>{inv.email}</td>
-                        <td style={{ padding: '8px 0', color: 'var(--color-muted-foreground)' }}>{inv.role}</td>
-                        <td style={{ padding: '8px 0', color: 'var(--color-muted-foreground)' }}>{new Date(inv.expiresAt).toLocaleDateString()}</td>
-                        <td style={{ padding: '8px 0' }}>
+                        <td style={{ padding: 'var(--space-2) var(--space-3) var(--space-2) 0' }}>{inv.email}</td>
+                        <td style={{ padding: 'var(--space-2) var(--space-3) var(--space-2) 0', color: 'var(--color-muted-foreground)' }}>{inv.role}</td>
+                        <td style={{ padding: 'var(--space-2) var(--space-3) var(--space-2) 0', color: 'var(--color-muted-foreground)' }}>{new Date(inv.expiresAt).toLocaleDateString()}</td>
+                        <td style={{ padding: 'var(--space-2) var(--space-3) var(--space-2) 0' }}>
                           <button
                             className="secondary"
                             disabled={revokingId === inv.id}

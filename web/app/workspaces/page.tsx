@@ -136,14 +136,14 @@ export default function WorkspacesPage() {
                       <tr key={w.id} style={{ borderTop: '1px solid var(--color-border)', opacity: w.status === 'archived' ? 0.6 : 1 }}>
                         {editing ? (
                           <>
-                            <td style={{ padding: '8px 0' }}>
+                            <td style={{ padding: 'var(--space-2) var(--space-3) var(--space-2) 0' }}>
                               <input value={editName} onChange={(e) => setEditName(e.target.value)} />
                             </td>
-                            <td style={{ padding: '8px 0' }}>
+                            <td style={{ padding: 'var(--space-2) var(--space-3) var(--space-2) 0' }}>
                               <input value={editDescription} onChange={(e) => setEditDescription(e.target.value)} />
                             </td>
-                            <td style={{ padding: '8px 0', color: 'var(--color-muted-foreground)' }}>{w.status}</td>
-                            <td style={{ padding: '8px 0', display: 'flex', gap: 8 }}>
+                            <td style={{ padding: 'var(--space-2) var(--space-3) var(--space-2) 0', color: 'var(--color-muted-foreground)' }}>{w.status}</td>
+                            <td style={{ padding: 'var(--space-2) var(--space-3) var(--space-2) 0', display: 'flex', gap: 8 }}>
                               <button className="secondary" disabled={busy} onClick={() => handleSaveEdit(w.id)}>
                                 Save
                               </button>
@@ -154,10 +154,10 @@ export default function WorkspacesPage() {
                           </>
                         ) : (
                           <>
-                            <td style={{ padding: '8px 0' }}>{w.name}</td>
-                            <td style={{ padding: '8px 0', color: 'var(--color-muted-foreground)' }}>{w.description ?? '—'}</td>
-                            <td style={{ padding: '8px 0', color: 'var(--color-muted-foreground)' }}>{w.status}</td>
-                            <td style={{ padding: '8px 0', display: 'flex', gap: 8 }}>
+                            <td style={{ padding: 'var(--space-2) var(--space-3) var(--space-2) 0' }}>{w.name}</td>
+                            <td style={{ padding: 'var(--space-2) var(--space-3) var(--space-2) 0', color: 'var(--color-muted-foreground)' }}>{w.description ?? '—'}</td>
+                            <td style={{ padding: 'var(--space-2) var(--space-3) var(--space-2) 0', color: 'var(--color-muted-foreground)' }}>{w.status}</td>
+                            <td style={{ padding: 'var(--space-2) var(--space-3) var(--space-2) 0', display: 'flex', gap: 8 }}>
                               <button className="secondary" disabled={busy} onClick={() => startEdit(w)}>
                                 Edit
                               </button>
