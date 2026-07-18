@@ -1,6 +1,8 @@
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readdirSync, statSync, unlinkSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, unlinkSync } from 'node:fs';
+import { basename, join } from 'node:path';
+import { isObjectStorageConfigured, uploadFile } from '../lib/object-storage.js';
+import type { Env } from '../env.js';
 
 export interface BackupResult {
   file: string;
@@ -61,6 +63,29 @@ export function runRestore(databaseUrl: string, backupFile: string): void {
   });
   if (result.status !== 0) {
     throw new Error(`pg_restore failed: ${result.stderr || result.error?.message || 'unknown error'}`);
+  }
+}
+
+/**
+ * RT-071 — uploads an already-written local dump to the same MinIO/S3
+ * object storage RT-025/RT-030 already wired up, under a private
+ * "backups/" prefix (a database dump must never be public-readable).
+ * Best-effort and opt-in, same convention as embeddings/SMTP/Marketplace:
+ * returns null (never throws) when object storage isn't configured or the
+ * upload itself fails — a cloud-upload outage must not be treated as the
+ * backup itself having failed, since the local dump file already exists
+ * and is independently useful.
+ */
+export async function uploadBackupToCloud(env: Env, filePath: string): Promise<string | null> {
+  if (!isObjectStorageConfigured(env)) return null;
+  try {
+    const body = readFileSync(filePath);
+    const key = `backups/${basename(filePath)}`;
+    const { key: uploadedKey } = await uploadFile(env, key, body, 'application/octet-stream');
+    return uploadedKey;
+  } catch (err) {
+    console.error('[backup] cloud upload failed:', err instanceof Error ? err.message : err);
+    return null;
   }
 }
 

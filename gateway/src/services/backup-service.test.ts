@@ -3,9 +3,20 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 import { createTestDb, getTestDatabaseUrl } from '../test-support/db.js';
-import { checkPgDumpAvailable, checkPgRestoreAvailable, pruneOldBackups, runBackup, runRestore } from './backup-service.js';
+import { createTestEnv } from '../test-support/env.js';
+import { getPresignedDownloadUrl } from '../lib/object-storage.js';
+import {
+  checkPgDumpAvailable,
+  checkPgRestoreAvailable,
+  pruneOldBackups,
+  runBackup,
+  runRestore,
+  uploadBackupToCloud,
+} from './backup-service.js';
 
 const pgToolsAvailable = checkPgDumpAvailable() && checkPgRestoreAvailable();
+const minioAvailable = Boolean(process.env.MINIO_ENDPOINT);
+const describeIfMinio = minioAvailable ? describe : describe.skip;
 
 /**
  * Real round trip against the actual test DB when pg_dump/pg_restore are on
@@ -68,5 +79,52 @@ describe('backup-service without pg tools (always runs)', () => {
   it('runBackup() throws a clear error when pg_dump is unavailable', () => {
     if (pgToolsAvailable) return; // this environment has them — the graceful-failure path isn't reachable to test here
     expect(() => runBackup('postgres://fake', './backups')).toThrow('pg_dump is not on PATH');
+  });
+});
+
+describe('uploadBackupToCloud (RT-071)', () => {
+  it('returns null (not a throw) when object storage is not configured', async () => {
+    const tmpDir = mkdtempSync(join(tmpdir(), 'o2n-backup-upload-test-'));
+    const file = join(tmpDir, 'o2n-backup-fake.dump');
+    writeFileSync(file, 'not a real dump, just bytes for the upload test');
+    try {
+      const result = await uploadBackupToCloud(createTestEnv(), file);
+      expect(result).toBeNull();
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+});
+
+describeIfMinio('uploadBackupToCloud (real MinIO)', () => {
+  it('uploads the dump file privately under backups/ and it is fetchable via a presigned URL', async () => {
+    const env = createTestEnv({
+      MINIO_ENDPOINT: process.env.MINIO_ENDPOINT,
+      MINIO_PORT: Number(process.env.MINIO_PORT ?? 9000),
+      MINIO_ROOT_USER: process.env.MINIO_ROOT_USER,
+      MINIO_ROOT_PASSWORD: process.env.MINIO_ROOT_PASSWORD,
+      MINIO_BUCKET: 'o2n-files-test-backups',
+    });
+    const tmpDir = mkdtempSync(join(tmpdir(), 'o2n-backup-upload-test-'));
+    const content = `fake dump content ${Date.now()}`;
+    const file = join(tmpDir, `o2n-backup-${Date.now()}.dump`);
+    writeFileSync(file, content);
+
+    try {
+      const key = await uploadBackupToCloud(env, file);
+      expect(key).toBe(`backups/${file.split(/[\\/]/).pop()}`);
+
+      const url = await getPresignedDownloadUrl(env, key!);
+      const response = await fetch(url);
+      expect(response.status).toBe(200);
+      expect(await response.text()).toBe(content);
+
+      // Private by default — a naive unsigned request to the same key must not succeed.
+      const base = `http://${process.env.MINIO_ENDPOINT}:${process.env.MINIO_PORT ?? 9000}`;
+      const unsigned = await fetch(`${base}/o2n-files-test-backups/${key}`);
+      expect(unsigned.status).not.toBe(200);
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
   });
 });
