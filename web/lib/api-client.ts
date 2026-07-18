@@ -441,8 +441,24 @@ export const api = {
   createAgent: (input: AgentCreateRequest) =>
     request<Agent>('/v1/agents', { method: 'POST', body: JSON.stringify(input) }),
 
-  updateAgentSchedule: (id: string, schedule: { enabled: boolean; intervalMinutes?: number; prompt?: string }) =>
-    request<Agent>(`/v1/agents/${id}`, { method: 'PATCH', body: JSON.stringify({ schedule }) }),
+  updateAgentSchedule: (
+    id: string,
+    schedule: {
+      enabled: boolean;
+      intervalMinutes?: number;
+      prompt?: string;
+      // RT-088 — richer alternatives; when set, the scheduler prefers them
+      // over the legacy flat fields above (services/scheduler.ts).
+      target?:
+        | { type: 'chat'; prompt: string }
+        | { type: 'tool'; tool: 'telegram-send' | 'webhook-send'; params: Record<string, unknown> }
+        | { type: 'skill'; skillId: string; params: Record<string, unknown> }
+        | { type: 'workflow'; workflowId: string };
+      timing?:
+        | { type: 'interval'; intervalMinutes: number }
+        | { type: 'cron'; minute: number; hour?: number; daysOfWeek?: number[]; dayOfMonth?: number };
+    },
+  ) => request<Agent>(`/v1/agents/${id}`, { method: 'PATCH', body: JSON.stringify({ schedule }) }),
 
   pauseAgent: (id: string) => request<Agent>(`/v1/agents/${id}/pause`, { method: 'POST' }),
   resumeAgent: (id: string) => request<Agent>(`/v1/agents/${id}/resume`, { method: 'POST' }),
@@ -756,7 +772,7 @@ export const api = {
 
   getOrganization: () => request<Organization>('/v1/organization'),
 
-  updateOrganization: (input: { name?: string; settings?: Record<string, unknown>; language?: string }) =>
+  updateOrganization: (input: { name?: string; settings?: Record<string, unknown>; language?: string; timezone?: string }) =>
     request<Organization>('/v1/organization', { method: 'PATCH', body: JSON.stringify(input) }),
 
   // RT-030 — bypasses request()'s JSON-forcing Content-Type logic: a

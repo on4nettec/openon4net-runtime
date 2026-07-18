@@ -13,6 +13,7 @@ interface OrgRow {
   activation_type: Organization['activationType'];
   max_users: number | null;
   language: string;
+  timezone: string;
   logo_light_url: string | null;
   logo_dark_url: string | null;
   created_at: string;
@@ -51,6 +52,7 @@ function toOrganization(row: OrgRow): Organization {
     activationType: row.activation_type,
     maxUsers: row.max_users,
     language: row.language,
+    timezone: row.timezone,
     logoLightUrl: row.logo_light_url,
     logoDarkUrl: row.logo_dark_url,
     createdAt: row.created_at,
@@ -97,6 +99,8 @@ export class OrgService {
    * auditChainGenesis for RT-054/055), so one feature's partial update must
    * not clobber another's key. `language` (RT-083) IS editable here — it's
    * the org-level i18n default, an admin-facing setting same as `name`.
+   * `timezone` (RT-088) is the same kind of admin-facing default, used to
+   * evaluate Agent Schedule cron patterns (services/scheduler.ts).
    */
   async update(organizationId: string, input: OrganizationUpdateInput): Promise<Organization> {
     const { rows } = await this.db.query<OrgRow>(
@@ -104,10 +108,11 @@ export class OrgService {
        SET name = COALESCE($1, name),
            settings = settings || $2::jsonb,
            language = COALESCE($3, language),
+           timezone = COALESCE($4, timezone),
            updated_at = NOW()
-       WHERE id = $4
+       WHERE id = $5
        RETURNING *`,
-      [input.name ?? null, JSON.stringify(input.settings ?? {}), input.language ?? null, organizationId],
+      [input.name ?? null, JSON.stringify(input.settings ?? {}), input.language ?? null, input.timezone ?? null, organizationId],
     );
     const row = rows[0];
     if (!row) throw new NotFoundError('Organization', organizationId);

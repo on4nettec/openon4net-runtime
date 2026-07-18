@@ -16,6 +16,31 @@ interface Config {
   rateLimitPerMinute: number;
 }
 
+/** RT-088 — a curated subset of IANA time zones (not the full ~400-entry list) for a no-code-friendly picker; the server still validates against the complete real list (packages/shared's TimezoneSchema). */
+const COMMON_TIMEZONES = [
+  'UTC',
+  'America/Los_Angeles',
+  'America/Denver',
+  'America/Chicago',
+  'America/New_York',
+  'America/Sao_Paulo',
+  'Europe/London',
+  'Europe/Paris',
+  'Europe/Berlin',
+  'Europe/Moscow',
+  'Africa/Cairo',
+  'Asia/Istanbul',
+  'Asia/Tehran',
+  'Asia/Dubai',
+  'Asia/Karachi',
+  'Asia/Kolkata',
+  'Asia/Dhaka',
+  'Asia/Bangkok',
+  'Asia/Shanghai',
+  'Asia/Tokyo',
+  'Australia/Sydney',
+];
+
 interface TestResult {
   success: boolean;
   model?: string;
@@ -41,6 +66,7 @@ export default function SettingsPage() {
   // RT-083 — org-level i18n default (per-user override lives on /agents's
   // first-login picker instead, since that's a self-service, non-admin action).
   const [orgLanguage, setOrgLanguage] = useState('en');
+  const [orgTimezone, setOrgTimezone] = useState('UTC');
   const [savingOrg, setSavingOrg] = useState(false);
   const [orgSaveError, setOrgSaveError] = useState<string | null>(null);
 
@@ -127,6 +153,7 @@ export default function SettingsPage() {
         setOrganization(org);
         setOrgName(org.name);
         setOrgLanguage(org.language);
+        setOrgTimezone(org.timezone);
         const retention = org.settings.auditRetentionDays;
         setAuditRetentionDays(typeof retention === 'number' ? String(retention) : '');
       })
@@ -222,7 +249,7 @@ export default function SettingsPage() {
     setSavingOrg(true);
     setOrgSaveError(null);
     try {
-      await api.updateOrganization({ name: orgName, language: orgLanguage });
+      await api.updateOrganization({ name: orgName, language: orgLanguage, timezone: orgTimezone });
       setEditingOrg(false);
       await loadOrganization();
     } catch (err) {
@@ -352,10 +379,11 @@ export default function SettingsPage() {
                 <Row label="Plan" value={organization.plan} />
                 <Row label="Status" value={organization.status} />
                 <Row label="Default language" value={organization.language} />
+                <Row label="Timezone (used for Agent Schedule cron patterns)" value={organization.timezone} />
 
                 <div style={{ borderTop: '1px solid var(--color-border)', paddingTop: 14, marginTop: 4 }}>
                   <button type="button" onClick={() => setEditingOrg((v) => !v)}>
-                    {editingOrg ? 'Cancel' : 'Edit name/language'}
+                    {editingOrg ? 'Cancel' : 'Edit name/language/timezone'}
                   </button>
                 </div>
 
@@ -377,6 +405,17 @@ export default function SettingsPage() {
                         <option value="ar">العربية</option>
                         <option value="fr">Français</option>
                         <option value="es">Español</option>
+                      </select>
+                    </label>
+                    <label>
+                      Timezone (RT-088 — Agent Schedule cron patterns like &quot;every day at 9am&quot; are evaluated
+                      in this timezone)
+                      <select value={orgTimezone} onChange={(e) => setOrgTimezone(e.target.value)}>
+                        {COMMON_TIMEZONES.map((tz) => (
+                          <option key={tz} value={tz}>
+                            {tz}
+                          </option>
+                        ))}
                       </select>
                     </label>
                     <button type="submit" disabled={savingOrg}>

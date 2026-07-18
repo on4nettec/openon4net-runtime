@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import type { Agent, KpiDefinition, Organization, User } from '@o2n/shared';
 import { AGENT_ROLE_CATALOG } from '@o2n/shared';
-import { api, loadSession, ApiError, type Session } from '@/lib/api-client';
+import { api, loadSession, ApiError, type Session, type Skill, type Workflow } from '@/lib/api-client';
 import { applyDocumentDirection } from '@/lib/i18n';
 import { Sidebar } from '@/components/Sidebar';
 
@@ -18,6 +18,20 @@ const LANGUAGE_OPTIONS: { code: string; label: string }[] = [
   { code: 'fr', label: 'Français' },
   { code: 'es', label: 'Español' },
 ];
+
+/** RT-088 — a short human-readable summary of an agent's schedule timing, for the collapsed card view. */
+function describeSchedule(schedule: {
+  intervalMinutes?: number;
+  timing?: { type: 'interval'; intervalMinutes: number } | { type: 'cron'; minute: number; hour?: number };
+}): string {
+  if (schedule.timing?.type === 'cron') {
+    const { minute, hour } = schedule.timing;
+    const time = hour !== undefined ? `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}` : `:${String(minute).padStart(2, '0')} every hour`;
+    return `at ${time}`;
+  }
+  const intervalMinutes = schedule.timing?.type === 'interval' ? schedule.timing.intervalMinutes : schedule.intervalMinutes;
+  return `every ${intervalMinutes ?? '?'}m`;
+}
 
 const OTHER_ROLE = '__other__';
 
@@ -69,6 +83,21 @@ export default function AgentsPage() {
   const [savingSchedule, setSavingSchedule] = useState(false);
   const [scheduleError, setScheduleError] = useState<string | null>(null);
 
+  // RT-088 — richer timing (interval vs. a cron-like hour/day pattern) and
+  // target (chat vs. directly running a tool/skill/workflow) selection.
+  const [scheduleTimingType, setScheduleTimingType] = useState<'interval' | 'cron'>('interval');
+  const [scheduleCronMinute, setScheduleCronMinute] = useState(0);
+  const [scheduleCronHour, setScheduleCronHour] = useState(''); // '' = every hour
+  const [scheduleCronDaysOfWeek, setScheduleCronDaysOfWeek] = useState<Set<number>>(new Set());
+  const [scheduleCronDayOfMonth, setScheduleCronDayOfMonth] = useState(''); // '' = every day
+  const [scheduleTargetType, setScheduleTargetType] = useState<'chat' | 'tool' | 'skill' | 'workflow'>('chat');
+  const [scheduleToolName, setScheduleToolName] = useState<'telegram-send' | 'webhook-send'>('webhook-send');
+  const [scheduleToolParamsText, setScheduleToolParamsText] = useState('{}');
+  const [scheduleSkillId, setScheduleSkillId] = useState('');
+  const [scheduleWorkflowId, setScheduleWorkflowId] = useState('');
+  const [skills, setSkills] = useState<Skill[]>([]);
+  const [workflows, setWorkflows] = useState<Workflow[]>([]);
+
   const [accessOpenId, setAccessOpenId] = useState<string | null>(null);
   const [accessBindings, setAccessBindings] = useState<AgentAccessBinding[]>([]);
   const [orgUsers, setOrgUsers] = useState<User[]>([]);
@@ -102,6 +131,15 @@ export default function AgentsPage() {
     api
       .getMe()
       .then(setMe)
+      .catch(() => {});
+    // RT-088 — for the schedule form's "skill"/"workflow" target pickers.
+    api
+      .listSkills()
+      .then(setSkills)
+      .catch(() => {});
+    api
+      .listWorkflows()
+      .then(setWorkflows)
       .catch(() => {});
   }, [router]);
 
@@ -195,11 +233,56 @@ export default function AgentsPage() {
       setScheduleOpenId(null);
       return;
     }
-    const s = agent.schedule as { enabled?: boolean; intervalMinutes?: number; prompt?: string };
+    type StoredSchedule = {
+      enabled?: boolean;
+      intervalMinutes?: number;
+      prompt?: string;
+      target?:
+        | { type: 'chat'; prompt: string }
+        | { type: 'tool'; tool: 'telegram-send' | 'webhook-send'; params?: Record<string, unknown> }
+        | { type: 'skill'; skillId: string; params?: Record<string, unknown> }
+        | { type: 'workflow'; workflowId: string };
+      timing?:
+        | { type: 'interval'; intervalMinutes: number }
+        | { type: 'cron'; minute: number; hour?: number; daysOfWeek?: number[]; dayOfMonth?: number };
+    };
+    const s = agent.schedule as StoredSchedule;
     setScheduleEnabled(s.enabled ?? false);
-    setScheduleInterval(s.intervalMinutes ?? 60);
-    setSchedulePrompt(s.prompt ?? '');
     setScheduleError(null);
+
+    // RT-088 — reconstruct the richer form state from `timing`/`target` when
+    // present, else from the legacy flat fields (matching runtime's own
+    // fallback in services/scheduler.ts).
+    if (s.timing?.type === 'cron') {
+      setScheduleTimingType('cron');
+      setScheduleCronMinute(s.timing.minute);
+      setScheduleCronHour(s.timing.hour !== undefined ? String(s.timing.hour) : '');
+      setScheduleCronDaysOfWeek(new Set(s.timing.daysOfWeek ?? []));
+      setScheduleCronDayOfMonth(s.timing.dayOfMonth !== undefined ? String(s.timing.dayOfMonth) : '');
+    } else {
+      setScheduleTimingType('interval');
+      setScheduleInterval((s.timing?.type === 'interval' ? s.timing.intervalMinutes : s.intervalMinutes) ?? 60);
+      setScheduleCronMinute(0);
+      setScheduleCronHour('');
+      setScheduleCronDaysOfWeek(new Set());
+      setScheduleCronDayOfMonth('');
+    }
+
+    if (s.target?.type === 'tool') {
+      setScheduleTargetType('tool');
+      setScheduleToolName(s.target.tool);
+      setScheduleToolParamsText(JSON.stringify(s.target.params ?? {}, null, 2));
+    } else if (s.target?.type === 'skill') {
+      setScheduleTargetType('skill');
+      setScheduleSkillId(s.target.skillId);
+    } else if (s.target?.type === 'workflow') {
+      setScheduleTargetType('workflow');
+      setScheduleWorkflowId(s.target.workflowId);
+    } else {
+      setScheduleTargetType('chat');
+      setSchedulePrompt((s.target?.type === 'chat' ? s.target.prompt : s.prompt) ?? '');
+    }
+
     setScheduleOpenId(agent.id);
   }
 
@@ -207,10 +290,44 @@ export default function AgentsPage() {
     setSavingSchedule(true);
     setScheduleError(null);
     try {
+      const timing =
+        scheduleTimingType === 'cron'
+          ? {
+              type: 'cron' as const,
+              minute: scheduleCronMinute,
+              ...(scheduleCronHour !== '' ? { hour: Number(scheduleCronHour) } : {}),
+              ...(scheduleCronDaysOfWeek.size > 0 ? { daysOfWeek: [...scheduleCronDaysOfWeek].sort() } : {}),
+              ...(scheduleCronDayOfMonth !== '' ? { dayOfMonth: Number(scheduleCronDayOfMonth) } : {}),
+            }
+          : { type: 'interval' as const, intervalMinutes: scheduleInterval };
+
+      let target;
+      if (scheduleTargetType === 'tool') {
+        let params: Record<string, unknown> = {};
+        try {
+          params = JSON.parse(scheduleToolParamsText || '{}') as Record<string, unknown>;
+        } catch {
+          setScheduleError('Tool params must be valid JSON');
+          setSavingSchedule(false);
+          return;
+        }
+        target = { type: 'tool' as const, tool: scheduleToolName, params };
+      } else if (scheduleTargetType === 'skill') {
+        target = { type: 'skill' as const, skillId: scheduleSkillId, params: {} };
+      } else if (scheduleTargetType === 'workflow') {
+        target = { type: 'workflow' as const, workflowId: scheduleWorkflowId };
+      } else {
+        target = { type: 'chat' as const, prompt: schedulePrompt };
+      }
+
       await api.updateAgentSchedule(agentId, {
         enabled: scheduleEnabled,
-        intervalMinutes: scheduleInterval,
-        prompt: schedulePrompt,
+        // Legacy flat fields kept in sync too, so an older client reading
+        // this agent still sees a sane interval/prompt.
+        ...(scheduleTimingType === 'interval' ? { intervalMinutes: scheduleInterval } : {}),
+        ...(scheduleTargetType === 'chat' ? { prompt: schedulePrompt } : {}),
+        target,
+        timing,
       });
       setScheduleOpenId(null);
       await refresh();
@@ -436,7 +553,11 @@ export default function AgentsPage() {
               const scheduleOpen = scheduleOpenId === agent.id;
               const accessOpen = accessOpenId === agent.id;
               const kpisOpen = kpisOpenId === agent.id;
-              const agentScheduleInfo = agent.schedule as { enabled?: boolean; intervalMinutes?: number };
+              const agentScheduleInfo = agent.schedule as {
+                enabled?: boolean;
+                intervalMinutes?: number;
+                timing?: { type: 'interval'; intervalMinutes: number } | { type: 'cron'; minute: number; hour?: number };
+              };
               const agentKpis = (agent.kpiConfig as { kpis?: KpiDefinition[] }).kpis ?? [];
               return (
                 <div key={agent.id} className="card">
@@ -452,7 +573,7 @@ export default function AgentsPage() {
                       <BudgetBar usedCents={agent.usedBudgetCents} limitCents={agent.monthlyBudgetCents} />
                       {agentScheduleInfo.enabled ? (
                         <div style={{ color: 'var(--color-success)', fontSize: 11, marginTop: 4 }}>
-                          ⏱ every {agentScheduleInfo.intervalMinutes}m
+                          ⏱ {describeSchedule(agentScheduleInfo)}
                         </div>
                       ) : null}
                       {agentKpis.length > 0 ? (
@@ -504,28 +625,173 @@ export default function AgentsPage() {
                           checked={scheduleEnabled}
                           onChange={(e) => setScheduleEnabled(e.target.checked)}
                         />
-                        Enabled — run this agent automatically on a timer
+                        Enabled — run this agent automatically
                       </label>
+
                       <label>
-                        Interval (minutes)
-                        <input
-                          type="number"
-                          min={1}
-                          value={scheduleInterval}
-                          onChange={(e) => setScheduleInterval(Number(e.target.value))}
-                        />
+                        When
+                        <select
+                          value={scheduleTimingType}
+                          onChange={(e) => setScheduleTimingType(e.target.value as 'interval' | 'cron')}
+                        >
+                          <option value="interval">Every N minutes</option>
+                          <option value="cron">Specific time/day (e.g. every day at 9am)</option>
+                        </select>
                       </label>
+                      {scheduleTimingType === 'interval' ? (
+                        <label>
+                          Interval (minutes)
+                          <input
+                            type="number"
+                            min={1}
+                            value={scheduleInterval}
+                            onChange={(e) => setScheduleInterval(Number(e.target.value))}
+                          />
+                        </label>
+                      ) : (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                          <div style={{ display: 'flex', gap: 10 }}>
+                            <label style={{ flex: 1 }}>
+                              Hour (org timezone, blank = every hour)
+                              <input
+                                type="number"
+                                min={0}
+                                max={23}
+                                value={scheduleCronHour}
+                                onChange={(e) => setScheduleCronHour(e.target.value)}
+                                placeholder="0-23"
+                              />
+                            </label>
+                            <label style={{ flex: 1 }}>
+                              Minute
+                              <input
+                                type="number"
+                                min={0}
+                                max={59}
+                                value={scheduleCronMinute}
+                                onChange={(e) => setScheduleCronMinute(Number(e.target.value))}
+                              />
+                            </label>
+                          </div>
+                          <div>
+                            Days of week (blank = every day)
+                            <div style={{ display: 'flex', gap: 8, marginTop: 4, flexWrap: 'wrap' }}>
+                              {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((label, day) => (
+                                <label key={day} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12 }}>
+                                  <input
+                                    type="checkbox"
+                                    checked={scheduleCronDaysOfWeek.has(day)}
+                                    onChange={(e) => {
+                                      setScheduleCronDaysOfWeek((prev) => {
+                                        const next = new Set(prev);
+                                        if (e.target.checked) next.add(day);
+                                        else next.delete(day);
+                                        return next;
+                                      });
+                                    }}
+                                  />
+                                  {label}
+                                </label>
+                              ))}
+                            </div>
+                          </div>
+                          <label>
+                            Day of month (blank = every day)
+                            <input
+                              type="number"
+                              min={1}
+                              max={31}
+                              value={scheduleCronDayOfMonth}
+                              onChange={(e) => setScheduleCronDayOfMonth(e.target.value)}
+                              placeholder="1-31"
+                            />
+                          </label>
+                        </div>
+                      )}
+
                       <label>
-                        Prompt (sent to the agent as if a user typed it)
-                        <input
-                          value={schedulePrompt}
-                          onChange={(e) => setSchedulePrompt(e.target.value)}
-                          placeholder="e.g. Summarize any new activity and flag anything urgent."
-                        />
+                        What to run
+                        <select
+                          value={scheduleTargetType}
+                          onChange={(e) => setScheduleTargetType(e.target.value as typeof scheduleTargetType)}
+                        >
+                          <option value="chat">Send a chat message to this agent</option>
+                          <option value="tool">Run a tool directly (Telegram/webhook)</option>
+                          <option value="skill">Run a Skill</option>
+                          <option value="workflow">Run a Workflow</option>
+                        </select>
                       </label>
+                      {scheduleTargetType === 'chat' ? (
+                        <label>
+                          Prompt (sent to the agent as if a user typed it)
+                          <input
+                            value={schedulePrompt}
+                            onChange={(e) => setSchedulePrompt(e.target.value)}
+                            placeholder="e.g. Summarize any new activity and flag anything urgent."
+                          />
+                        </label>
+                      ) : scheduleTargetType === 'tool' ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                          <label>
+                            Tool
+                            <select
+                              value={scheduleToolName}
+                              onChange={(e) => setScheduleToolName(e.target.value as 'telegram-send' | 'webhook-send')}
+                            >
+                              <option value="webhook-send">Webhook</option>
+                              <option value="telegram-send">Telegram message</option>
+                            </select>
+                          </label>
+                          <label>
+                            Params (JSON)
+                            <textarea
+                              value={scheduleToolParamsText}
+                              onChange={(e) => setScheduleToolParamsText(e.target.value)}
+                              rows={4}
+                              style={{ fontFamily: 'monospace', fontSize: 13, width: '100%' }}
+                              placeholder={
+                                scheduleToolName === 'webhook-send'
+                                  ? '{ "url": "https://...", "payload": {} }'
+                                  : '{ "chatId": "...", "message": "..." }'
+                              }
+                            />
+                          </label>
+                        </div>
+                      ) : scheduleTargetType === 'skill' ? (
+                        <label>
+                          Skill
+                          <select value={scheduleSkillId} onChange={(e) => setScheduleSkillId(e.target.value)}>
+                            <option value="">Select a skill…</option>
+                            {skills.map((skill) => (
+                              <option key={skill.id} value={skill.id}>
+                                {skill.name}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      ) : (
+                        <label>
+                          Workflow
+                          <select value={scheduleWorkflowId} onChange={(e) => setScheduleWorkflowId(e.target.value)}>
+                            <option value="">Select a workflow…</option>
+                            {workflows.map((workflow) => (
+                              <option key={workflow.id} value={workflow.id}>
+                                {workflow.name}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      )}
+
                       <button
                         onClick={() => handleSaveSchedule(agent.id)}
-                        disabled={savingSchedule || (scheduleEnabled && !schedulePrompt.trim())}
+                        disabled={
+                          savingSchedule ||
+                          (scheduleEnabled &&
+                            ((scheduleTargetType === 'chat' && !schedulePrompt.trim()) ||
+                              (scheduleTargetType === 'skill' && !scheduleSkillId) ||
+                              (scheduleTargetType === 'workflow' && !scheduleWorkflowId)))
+                        }
                       >
                         {savingSchedule ? 'Saving…' : 'Save schedule'}
                       </button>

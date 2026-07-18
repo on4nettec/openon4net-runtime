@@ -117,6 +117,29 @@ describe('OrgService', () => {
     });
   });
 
+  describe('timezone (RT-088)', () => {
+    it('new organizations default to "UTC"', async () => {
+      const fixture = await withFixture();
+      const orgService = new OrgService(db);
+      const org = await orgService.getById(fixture.organizationId);
+      expect(org.timezone).toBe('UTC');
+    });
+
+    it('update can set the org-level timezone independently of name/settings/language', async () => {
+      const fixture = await withFixture();
+      const orgService = new OrgService(db);
+      const before = await orgService.getById(fixture.organizationId);
+
+      const updated = await orgService.update(fixture.organizationId, { timezone: 'Asia/Tehran' });
+      expect(updated.timezone).toBe('Asia/Tehran');
+      expect(updated.name).toBe(before.name);
+      expect(updated.language).toBe(before.language);
+
+      const refreshed = await orgService.getById(fixture.organizationId);
+      expect(refreshed.timezone).toBe('Asia/Tehran');
+    });
+  });
+
   describe('updateBranding (RT-030)', () => {
     it('defaults to null for both logo variants (the default O2N mark)', async () => {
       const fixture = await withFixture();
