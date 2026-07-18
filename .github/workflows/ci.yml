@@ -104,28 +104,15 @@ jobs:
         working-directory: parent/apps/openon4net-runtime/gateway
         run: node scripts/migrate.mjs
 
-      # Diagnostic (temporary): a handful of gateway test files have
-      # deterministically failed with test-support/db.ts's hardcoded
-      # fallback credentials instead of the DATABASE_URL set above, across
-      # multiple attempted fixes (services block, step-level env restate,
-      # turbo.json task-level env allowlist). Running vitest directly here
-      # (bypassing turbo entirely) isolates whether turbo itself is
-      # filtering the env for its child processes — if this step ALSO
-      # reproduces the same 3-file failure, turbo isn't the cause and the
-      # turbo.json change won't have helped either.
-      - name: Debug — run gateway tests directly, bypassing turbo
-        working-directory: parent/apps/openon4net-runtime/gateway
-        run: node_modules/.bin/vitest run --passWithNoTests || true
-
+      # A handful of gateway test files deterministically got
+      # test-support/db.ts's hardcoded fallback DB credentials instead of
+      # the DATABASE_URL set above, until turbo.json (root repo) declared
+      # DATABASE_URL/REDIS_URL as `env` for the "test" task — turbo only
+      # guarantees an env var reaches a task's child process when declared
+      # there, regardless of what's set at the job/step level in this
+      # workflow. Restated here too as harmless defense-in-depth.
       - name: Lint, typecheck, test
         working-directory: parent
-        # DATABASE_URL/REDIS_URL are already set at job level above; restated
-        # here too as a belt-and-suspenders measure after a run where some
-        # (not all) DB-dependent test files got test-support/db.ts's
-        # hardcoded fallback connection string instead — root cause not yet
-        # confirmed (a job-level env issue specific to this runner, or an
-        # unrelated flake), so this rules out the simplest explanation
-        # before digging further if it recurs.
         env:
           DATABASE_URL: postgres://postgres:postgres@localhost:5432/o2n
           REDIS_URL: redis://localhost:6379
