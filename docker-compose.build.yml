@@ -1,0 +1,38 @@
+# Build context is the PARENT (openon4net) repo root, not this directory —
+# gateway/web depend on packages/shared, packages/governance, packages/llm-providers
+# via pnpm's "workspace:*" protocol, which only resolves inside the full monorepo
+# tree. Run this from a checkout of the parent superproject with this submodule
+# initialized (`git submodule update --init`), not from a standalone clone of
+# openon4net-runtime alone. See ci.yml for the same constraint in CI.
+#
+# postgres/redis/minio are NOT managed here — they run as separate,
+# already-existing containers on this machine. This file only builds and runs
+# gateway + web, which connect to that external infra via DATABASE_URL/
+# REDIS_URL in ./.env (copy .env.example -> .env first).
+#
+# Gateway runs inside a container, so DATABASE_URL/REDIS_URL in .env must use
+# `host.docker.internal` (Docker Desktop's DNS name for the host machine),
+# NOT `localhost` — `localhost` inside this container means the container
+# itself, not your host's postgres/redis. If you instead run the gateway
+# directly on the host (`pnpm dev`, no Docker), use `localhost` there.
+services:
+  gateway:
+    build:
+      context: ../..
+      dockerfile: apps/openon4net-runtime/Dockerfile.gateway
+    env_file: .env
+    extra_hosts:
+      - 'host.docker.internal:host-gateway' # needed on Linux Docker; no-op on Docker Desktop (Win/Mac)
+    ports:
+      - '4000:4000'
+
+  web:
+    build:
+      context: ../..
+      dockerfile: apps/openon4net-runtime/Dockerfile.web
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:4000
+    ports:
+      - '3200:3000' # host 3200 -> avoid clashing with other local apps on 3000
+    depends_on:
+      - gateway
